@@ -20,52 +20,74 @@ async fn main() -> std::io::Result<()> {
         CanSocket::open("can0").map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     let mut vehicle_data = VehicleData::default();
+    let pids = [
+        (0x04, "Engine load"),
+        (0x05, "Coolant temperature"),
+        (0x0A, "Fuel pressure"),
+        (0x0B, "Intake manifold pressure"),
+        (0x0C, "Engine RPM"),
+        (0x0D, "Vehicle speed"),
+        (0x0E, "Timing advance"),
+        (0x0F, "Intake air temperature"),
+        (0x10, "MAF sensor"),
+        (0x11, "Throttle position"),
+        (0x14, "O2 Sensor Voltage"),
+        (0x2F, "Fuel Level"),
+        (0x33, "Barometric pressure"),
+        (0x46, "Ambient temperature"),
+        (0x23, "Fuel rail pressure"),
+        (0x2C, "Commanded EGR"),
+        (0x2D, "EGR Error"),
+        (0x06, "Short term fuel trim Bank 1"),
+        (0x07, "Long term fuel trim Bank 1"),
+    ];
+
+    const BATCH_SIZE: usize = 5;
 
     loop {
-        // Send OBD requests for all parameters
-        send_request(&socket_tx, 0x04).await?; // Engine load
-        send_request(&socket_tx, 0x05).await?; // Coolant temperature
-        send_request(&socket_tx, 0x0A).await?; // Fuel pressure
-        send_request(&socket_tx, 0x0B).await?; // Intake manifold pressure
-        send_request(&socket_tx, 0x0C).await?; // Engine RPM
-        send_request(&socket_tx, 0x0D).await?; // Vehicle speed
-        send_request(&socket_tx, 0x0E).await?; // Timing advance
-        send_request(&socket_tx, 0x0F).await?; // Intake air temperature
-        send_request(&socket_tx, 0x10).await?; // MAF sensor
-        send_request(&socket_tx, 0x11).await?; // Throttle position
-        send_request(&socket_tx, 0x14).await?; // O2 Sensor Voltage
-        send_request(&socket_tx, 0x2F).await?; // Fuel Level
-        send_request(&socket_tx, 0x33).await?; // Barometric pressure
-        send_request(&socket_tx, 0x46).await?; // Ambient temperature
-        send_request(&socket_tx, 0x23).await?; // Fuel rail pressure
-        send_request(&socket_tx, 0x2C).await?; // Commanded EGR
-        send_request(&socket_tx, 0x2D).await?; // EGR Error
-        send_request(&socket_tx, 0x06).await?; // Short term fuel trim Bank 1
-        send_request(&socket_tx, 0x07).await?; // Long term fuel trim Bank 1
+        // Process PIDs in smaller batches
+        for chunk in pids.chunks(BATCH_SIZE) {
+            // Send requests for current batch
+            for (pid, desc) in chunk.iter() {
+                if let Err(e) = send_request(&socket_tx, *pid).await {
+                    eprintln!("Error sending request for {}: {}", desc, e);
+                    continue;
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
 
-        let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(300));
-        tokio::pin!(timeout);
+            // Wait for responses for current batch
+            let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(200));
+            tokio::pin!(timeout);
 
-        for _ in 0..21 {
-            tokio::select! {
-                frame = socket_rx.next() => {
-                    if let Some(Ok(frame)) = frame {
-                        if let CanFrame::Data(frame) = frame {
-                            if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
-                                parse_obd_response(&frame, &mut vehicle_data);
+            let mut responses_received = 0;
+            while responses_received < chunk.len() {
+                tokio::select! {
+                    frame = socket_rx.next() => {
+                        match frame {
+                            Some(Ok(frame)) => {
+                                if let CanFrame::Data(frame) = frame {
+                                    if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
+                                        parse_obd_response(&frame, &mut vehicle_data);
+                                        responses_received += 1;
+                                    }
+                                }
                             }
+                            Some(Err(e)) => eprintln!("Error reading frame: {}", e),
+                            None => break,
                         }
                     }
+                    _ = &mut timeout => {
+                        break;
+                    }
                 }
-                _ = &mut timeout => {
-                    break;
-                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
             }
+
+            display_vehicle_data(&vehicle_data);
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }
-
-        display_vehicle_data(&vehicle_data);
-
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
     }
 
     async fn send_request(socket: &CanSocket, pid: u8) -> std::io::Result<()> {
