@@ -1,0 +1,10 @@
+[package]
+name = "can-to-mqtt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+socketcan = { version = "3.5.0", features = ["tokio"] }
+tokio = { version = "1.43.0", features = ["full"] }
+futures-util = "0.3.31"
+prettytable-rs = "0.10.0"
