@@ -28,7 +28,6 @@ async fn main() -> std::io::Result<()> {
         (0x04, "Engine load"),
         (0x0E, "Timing advance"),
         (0x11, "Throttle position"),
-        (0x0B, "Intake manifold pressure"),
     ];
 
     // Regular frequency PIDs (excluding RPM and speed)
@@ -40,6 +39,7 @@ async fn main() -> std::io::Result<()> {
         (0x08, "Short term fuel trim Bank 2"),
         (0x09, "Long term fuel trim Bank 2"),
         (0x0A, "Fuel pressure"),
+        (0x0B, "Intake manifold pressure"),
         (0x0F, "Intake air temperature"),
         (0x10, "MAF sensor"),
         (0x14, "O2 Sensor Voltage B1S1"),
