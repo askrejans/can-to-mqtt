@@ -20,9 +20,19 @@ async fn main() -> std::io::Result<()> {
         CanSocket::open("can0").map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     let mut vehicle_data = VehicleData::default();
-    let pids = [
-        // Mode 01 PIDs
+
+    // Separate high-frequency PIDs
+    let high_freq_pids = [
+        (0x0C, "Engine RPM"),
+        (0x0D, "Vehicle speed"),
         (0x04, "Engine load"),
+        (0x0E, "Timing advance"),
+        (0x11, "Throttle position"),
+    ];
+
+    // Regular frequency PIDs (excluding RPM and speed)
+    let regular_pids = [
+        // Mode 01 PIDs
         (0x05, "Coolant temperature"),
         (0x06, "Short term fuel trim Bank 1"),
         (0x07, "Long term fuel trim Bank 1"),
@@ -30,12 +40,8 @@ async fn main() -> std::io::Result<()> {
         (0x09, "Long term fuel trim Bank 2"),
         (0x0A, "Fuel pressure"),
         (0x0B, "Intake manifold pressure"),
-        (0x0C, "Engine RPM"),
-        (0x0D, "Vehicle speed"),
-        (0x0E, "Timing advance"),
         (0x0F, "Intake air temperature"),
         (0x10, "MAF sensor"),
-        (0x11, "Throttle position"),
         (0x14, "O2 Sensor Voltage B1S1"),
         (0x15, "O2 Sensor Voltage B1S2"),
         (0x16, "O2 Sensor Voltage B1S3"),
@@ -69,19 +75,36 @@ async fn main() -> std::io::Result<()> {
         (0x5E, "Engine fuel rate"),
     ];
 
+    let mut regular_cycle_counter = 0;
+
     loop {
-        for (pid, desc) in pids.iter() {
+        // Request high-frequency PIDs every cycle
+        for (pid, desc) in high_freq_pids.iter() {
             if let Err(e) = send_request(&socket_tx, *pid).await {
                 eprintln!("Error sending request for {}: {}", desc, e);
-                continue;
             }
         }
 
-        let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(200));
+        // Request regular PIDs every 10 cycles (200ms / 20ms = 10)
+        if regular_cycle_counter == 0 {
+            for (pid, desc) in regular_pids.iter() {
+                if let Err(e) = send_request(&socket_tx, *pid).await {
+                    eprintln!("Error sending request for {}: {}", desc, e);
+                }
+            }
+        }
+
+        let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(20));
         tokio::pin!(timeout);
 
+        let expected_responses = if regular_cycle_counter == 0 {
+            high_freq_pids.len() + regular_pids.len()
+        } else {
+            high_freq_pids.len()
+        };
+
         let mut responses_received = 0;
-        while responses_received < pids.len() {
+        while responses_received < expected_responses {
             tokio::select! {
                 frame = socket_rx.next() => {
                     match frame {
@@ -105,8 +128,8 @@ async fn main() -> std::io::Result<()> {
 
         display_vehicle_data(&vehicle_data);
 
-        // Wait before starting the next cycle
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Update cycle counter
+        regular_cycle_counter = (regular_cycle_counter + 1) % 10;
     }
 }
 
