@@ -1,233 +1,106 @@
 use crate::vehicle::data::VehicleData;
-use prettytable::{Table, row};
+use prettytable::{Cell, Table, row};
 
 pub fn display_vehicle_data(vehicle_data: &VehicleData) {
-    print!("\x1B[2J\x1B[1;1H"); // Clear screen and move cursor to top
+    // Clear screen, move cursor to top, and set small font
+    print!("\x1B[2J\x1B[1;1H\x1B[?3h"); // The ?3h code enables 132 column mode
+
     let mut table = Table::new();
 
-    table.add_row(row!["Parameter", "Value", "Unit"]);
+    // Helper closure to create formatted cells
+    let fmt_cell = |text: &str| Cell::new(text).style_spec("b");
+    let fmt_val = |val: String| Cell::new(&val);
 
-    // Engine and Performance
+    // Add data in groups of 4 parameters per row
     table.add_row(row![
-        "Engine Load",
-        vehicle_data.engine_load.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Engine RPM",
-        format!("{:.0}", vehicle_data.engine_rpm),
-        "RPM"
-    ]);
-    table.add_row(row![
-        "Vehicle Speed",
-        vehicle_data.vehicle_speed.to_string(),
-        "km/h"
-    ]);
-    table.add_row(row![
-        "Timing Advance",
-        format!("{:.1}", vehicle_data.timing_advance),
-        "°"
-    ]);
-    table.add_row(row![
-        "Throttle Position",
-        vehicle_data.throttle_pos.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Relative Throttle Pos",
-        vehicle_data.relative_throttle_pos.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Absolute Throttle Pos B",
-        vehicle_data.absolute_throttle_pos_b.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Absolute Throttle Pos C",
-        vehicle_data.absolute_throttle_pos_c.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Accelerator Pedal Pos D",
-        vehicle_data.accelerator_pedal_pos_d.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Accelerator Pedal Pos E",
-        vehicle_data.accelerator_pedal_pos_e.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "Accelerator Pedal Pos F",
-        vehicle_data.accelerator_pedal_pos_f.to_string(),
-        "%"
+        fmt_cell("Engine Load"),
+        fmt_val(format!("{}%", vehicle_data.engine_load)),
+        fmt_cell("Engine RPM"),
+        fmt_val(format!("{:.0} RPM", vehicle_data.engine_rpm)),
+        fmt_cell("Speed"),
+        fmt_val(format!("{} km/h", vehicle_data.vehicle_speed)),
+        fmt_cell("Timing Adv"),
+        fmt_val(format!("{:.1}°", vehicle_data.timing_advance))
     ]);
 
-    // Temperature Data
     table.add_row(row![
-        "Coolant Temp",
-        vehicle_data.coolant_temp.to_string(),
-        "°C"
-    ]);
-    table.add_row(row![
-        "Intake Temperature",
-        vehicle_data.intake_temp.to_string(),
-        "°C"
-    ]);
-    table.add_row(row![
-        "Ambient Temperature",
-        vehicle_data.ambient_temp.to_string(),
-        "°C"
-    ]);
-    table.add_row(row![
-        "Engine Oil Temp",
-        vehicle_data.engine_oil_temp.to_string(),
-        "°C"
-    ]);
-    table.add_row(row![
-        "Catalyst Temp B1S1",
-        format!("{:.1}", vehicle_data.catalyst_temp_b1s1),
-        "°C"
-    ]);
-    table.add_row(row![
-        "Catalyst Temp B2S1",
-        format!("{:.1}", vehicle_data.catalyst_temp_b2s1),
-        "°C"
+        fmt_cell("Throttle"),
+        fmt_val(format!("{}%", vehicle_data.throttle_pos)),
+        fmt_cell("Rel Throttle"),
+        fmt_val(format!("{}%", vehicle_data.relative_throttle_pos)),
+        fmt_cell("Abs Thrtle B"),
+        fmt_val(format!("{}%", vehicle_data.absolute_throttle_pos_b)),
+        fmt_cell("Abs Thrtle C"),
+        fmt_val(format!("{}%", vehicle_data.absolute_throttle_pos_c))
     ]);
 
-    // Pressure Data
     table.add_row(row![
-        "Fuel Pressure",
-        vehicle_data.fuel_pressure.to_string(),
-        "kPa"
-    ]);
-    table.add_row(row![
-        "Intake Pressure",
-        vehicle_data.intake_pressure.to_string(),
-        "kPa"
-    ]);
-    table.add_row(row![
-        "Barometric Pressure",
-        vehicle_data.baro_pressure.to_string(),
-        "kPa"
-    ]);
-    table.add_row(row![
-        "Fuel Rail Pressure",
-        vehicle_data.fuel_rail_pressure.to_string(),
-        "kPa"
-    ]);
-    table.add_row(row![
-        "Evap System Vapor Pressure",
-        format!("{:.1}", vehicle_data.evap_system_vapor_pressure),
-        "Pa"
+        fmt_cell("Cool Temp"),
+        fmt_val(format!("{}°C", vehicle_data.coolant_temp)),
+        fmt_cell("Intake Temp"),
+        fmt_val(format!("{}°C", vehicle_data.intake_temp)),
+        fmt_cell("Amb Temp"),
+        fmt_val(format!("{}°C", vehicle_data.ambient_temp)),
+        fmt_cell("Oil Temp"),
+        fmt_val(format!("{}°C", vehicle_data.engine_oil_temp))
     ]);
 
-    // Air and Fuel Data
     table.add_row(row![
-        "MAF Rate",
-        format!("{:.2}", vehicle_data.maf_sensor),
-        "g/s"
-    ]);
-    table.add_row(row![
-        "Commanded AFR",
-        format!("{:.3}", vehicle_data.command_equiv_ratio),
-        "λ"
-    ]);
-    table.add_row(row!["Fuel Level", vehicle_data.fuel_level.to_string(), "%"]);
-    table.add_row(row![
-        "Engine Fuel Rate",
-        format!("{:.2}", vehicle_data.engine_fuel_rate),
-        "L/h"
-    ]);
-    table.add_row(row![
-        "Fuel Injection Timing",
-        format!("{:.2}", vehicle_data.fuel_injection_timing),
-        "°"
+        fmt_cell("Cat B1S1"),
+        fmt_val(format!("{:.1}°C", vehicle_data.catalyst_temp_b1s1)),
+        fmt_cell("Cat B2S1"),
+        fmt_val(format!("{:.1}°C", vehicle_data.catalyst_temp_b2s1)),
+        fmt_cell("Fuel Press"),
+        fmt_val(format!("{} kPa", vehicle_data.fuel_pressure)),
+        fmt_cell("Intk Press"),
+        fmt_val(format!("{} kPa", vehicle_data.intake_pressure))
     ]);
 
-    // O2 Sensor Data
     table.add_row(row![
-        "O2 Sensor Voltage B1S1",
-        format!("{:.3}", vehicle_data.o2_voltage),
-        "V"
-    ]);
-    table.add_row(row![
-        "O2 Sensor Current B1S1",
-        format!("{:.3}", vehicle_data.o2_current),
-        "mA"
-    ]);
-    table.add_row(row![
-        "O2 Sensor Lambda B1S1",
-        format!("{:.3}", vehicle_data.o2_lambda),
-        "λ"
+        fmt_cell("Baro Press"),
+        fmt_val(format!("{} kPa", vehicle_data.baro_pressure)),
+        fmt_cell("Rail Press"),
+        fmt_val(format!("{} kPa", vehicle_data.fuel_rail_pressure)),
+        fmt_cell("MAF Rate"),
+        fmt_val(format!("{:.2} g/s", vehicle_data.maf_sensor)),
+        fmt_cell("CMD AFR"),
+        fmt_val(format!("{:.3} λ", vehicle_data.command_equiv_ratio))
     ]);
 
-    // Fuel Trim Data
     table.add_row(row![
-        "ST Fuel Trim B1",
-        format!("{:.1}", vehicle_data.fuel_trim_short_b1),
-        "%"
-    ]);
-    table.add_row(row![
-        "LT Fuel Trim B1",
-        format!("{:.1}", vehicle_data.fuel_trim_long_b1),
-        "%"
-    ]);
-    table.add_row(row![
-        "ST Fuel Trim B2",
-        format!("{:.1}", vehicle_data.fuel_trim_short_b2),
-        "%"
-    ]);
-    table.add_row(row![
-        "LT Fuel Trim B2",
-        format!("{:.1}", vehicle_data.fuel_trim_long_b2),
-        "%"
+        fmt_cell("Fuel Level"),
+        fmt_val(format!("{}%", vehicle_data.fuel_level)),
+        fmt_cell("Fuel Rate"),
+        fmt_val(format!("{:.2} L/h", vehicle_data.engine_fuel_rate)),
+        fmt_cell("O2 Voltage"),
+        fmt_val(format!("{:.3} V", vehicle_data.o2_voltage)),
+        fmt_cell("O2 Current"),
+        fmt_val(format!("{:.3} mA", vehicle_data.o2_current))
     ]);
 
-    // EGR System
     table.add_row(row![
-        "Commanded EGR",
-        vehicle_data.commanded_egr.to_string(),
-        "%"
-    ]);
-    table.add_row(row![
-        "EGR Error",
-        format!("{:.1}", vehicle_data.egr_error),
-        "%"
-    ]);
-    table.add_row(row![
-        "Evap Purge",
-        vehicle_data.commanded_evap_purge.to_string(),
-        "%"
+        fmt_cell("ST Trim B1"),
+        fmt_val(format!("{:.1}%", vehicle_data.fuel_trim_short_b1)),
+        fmt_cell("LT Trim B1"),
+        fmt_val(format!("{:.1}%", vehicle_data.fuel_trim_long_b1)),
+        fmt_cell("ST Trim B2"),
+        fmt_val(format!("{:.1}%", vehicle_data.fuel_trim_short_b2)),
+        fmt_cell("LT Trim B2"),
+        fmt_val(format!("{:.1}%", vehicle_data.fuel_trim_long_b2))
     ]);
 
-    // Additional Engine Data
     table.add_row(row![
-        "Module Voltage",
-        format!("{:.1}", vehicle_data.control_module_voltage),
-        "V"
-    ]);
-    table.add_row(row![
-        "Absolute Load Value",
-        format!("{:.1}", vehicle_data.absolute_load),
-        "%"
-    ]);
-    table.add_row(row![
-        "Engine Run Time",
-        format!("{:.0}", vehicle_data.engine_run_time),
-        "s"
-    ]);
-    table.add_row(row![
-        "Distance with MIL on",
-        vehicle_data.distance_with_mil.to_string(),
-        "km"
-    ]);
-    table.add_row(row![
-        "Time Since Codes Cleared",
-        vehicle_data.time_since_codes_cleared.to_string(),
-        "min"
+        fmt_cell("CMD EGR"),
+        fmt_val(format!("{}%", vehicle_data.commanded_egr)),
+        fmt_cell("EGR Error"),
+        fmt_val(format!("{:.1}%", vehicle_data.egr_error)),
+        fmt_cell("Mod Volt"),
+        fmt_val(format!("{:.1}V", vehicle_data.control_module_voltage)),
+        fmt_cell("Abs Load"),
+        fmt_val(format!("{:.1}%", vehicle_data.absolute_load))
     ]);
 
+    // Restore normal font size when exiting
     table.printstd();
+    print!("\x1B[?3l"); // Disable 132 column mode
 }
