@@ -70,7 +70,6 @@ async fn main() -> std::io::Result<()> {
     ];
 
     loop {
-        // Send all requests at once
         for (pid, desc) in pids.iter() {
             if let Err(e) = send_request(&socket_tx, *pid).await {
                 eprintln!("Error sending request for {}: {}", desc, e);
@@ -78,7 +77,6 @@ async fn main() -> std::io::Result<()> {
             }
         }
 
-        // Wait for responses with a longer timeout since we're handling all PIDs
         let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(200));
         tokio::pin!(timeout);
 
@@ -108,7 +106,7 @@ async fn main() -> std::io::Result<()> {
         display_vehicle_data(&vehicle_data);
 
         // Wait before starting the next cycle
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
     }
 }
 
