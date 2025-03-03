@@ -8,3 +8,9 @@ socketcan = { version = "3.5.0", features = ["tokio"] }
 tokio = { version = "1.43.0", features = ["full"] }
 futures-util = "0.3.31"
 prettytable-rs = "0.10.0"
+config = "0.15.5"
+paho-mqtt = "0.12.5"
+log = "0.4.25"
+thiserror = "2.0.11"
+lazy_static = "1.5.0"
+gumdrop = "0.8.1"

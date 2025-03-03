@@ -171,8 +171,6 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
             0x69 => {
                 if bytes.len() >= 5 {
                     data.actual_egr = bytes[3];
-                    // Note: commanded_egr already exists
-                    // egr_error already exists
                 }
             }
             0x6B => {
