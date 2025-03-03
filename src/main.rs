@@ -15,8 +15,8 @@ use can_to_mqtt::obd::response::parse_obd_response;
 use can_to_mqtt::config::AppConfig;
 use can_to_mqtt::config::load_configuration;
 use can_to_mqtt::mqtt_handler::{publish_if_changed, setup_mqtt};
-use paho_mqtt as mqtt;
 use gumdrop::Options;
+use paho_mqtt as mqtt;
 use tokio;
 
 /// Define options for the program.
@@ -34,10 +34,10 @@ async fn main() -> std::io::Result<()> {
     let opts = MyOptions::parse_args_default_or_exit();
     let config = load_config_or_exit(opts.config.as_deref());
 
-    let mut socket_rx =
-        CanSocket::open("can0").map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    let socket_tx =
-        CanSocket::open("can0").map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let mut socket_rx = CanSocket::open(&config.can_interface)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let socket_tx = CanSocket::open(&config.can_interface)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
     let mut vehicle_data = VehicleData::default();
 
@@ -149,7 +149,7 @@ async fn main() -> std::io::Result<()> {
         display_vehicle_data(&vehicle_data);
 
         let mqtt_client = setup_mqtt(&config);
-        if let Err(e) = publish_vehicle_data(&mqtt_client, &vehicle_data) {
+        if let Err(e) = publish_vehicle_data(&mqtt_client, &vehicle_data, &config) {
             eprintln!("Error publishing to MQTT: {}", e);
         }
 
@@ -184,57 +184,248 @@ async fn send_request(socket: &CanSocket, pid: u8) -> std::io::Result<()> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
 }
 
-pub fn publish_vehicle_data(cli: &mqtt::Client, data: &VehicleData) -> Result<(), Box<dyn Error>> {
-    // Engine parameters
-    publish_if_changed(cli, "RPM", &data.engine_rpm.to_string(), 0)?; // RPM - matches speeduino
-    publish_if_changed(cli, "TPS", &data.throttle_pos.to_string(), 0)?; // TPS - matches speeduino
-    publish_if_changed(cli, "MAP", &data.intake_pressure.to_string(), 0)?; // MAP - matches speeduino
-    publish_if_changed(cli, "MAT", &data.intake_temp.to_string(), 0)?; // MAT - matches speeduino
-    publish_if_changed(cli, "CLT", &data.coolant_temp.to_string(), 0)?; // CLT - matches speeduino
-    publish_if_changed(cli, "BAT", &data.control_module_voltage.to_string(), 0)?; // BAT - matches speeduino
-    publish_if_changed(cli, "BAR", &data.baro_pressure.to_string(), 0)?; // BAR - matches speeduino
-    publish_if_changed(cli, "VSS", &data.vehicle_speed.to_string(), 0)?; // VSS - matches speeduino
-    publish_if_changed(cli, "GER", &data.actual_gear.to_string(), 0)?; // GER - matches speeduino
+pub fn publish_vehicle_data(
+    cli: &mqtt::Client,
+    data: &VehicleData,
+    config: &AppConfig,
+) -> Result<(), Box<dyn Error>> {
+    let base_topic = &config.mqtt_base_topic;
 
-    // New codes for other parameters
-    publish_if_changed(cli, "ELD", &data.engine_load.to_string(), 0)?; // Engine Load
-    publish_if_changed(cli, "FST", &data.fuel_trim_short_b1.to_string(), 0)?; // Fuel Short Term B1
-    publish_if_changed(cli, "FLT", &data.fuel_trim_long_b1.to_string(), 0)?; // Fuel Long Term B1
-    publish_if_changed(cli, "FS2", &data.fuel_trim_short_b2.to_string(), 0)?; // Fuel Short Term B2
-    publish_if_changed(cli, "FL2", &data.fuel_trim_long_b2.to_string(), 0)?; // Fuel Long Term B2
-    publish_if_changed(cli, "FPR", &data.fuel_pressure.to_string(), 0)?; // FPR - matches speeduino
-    publish_if_changed(cli, "TAD", &data.timing_advance.to_string(), 0)?; // TAD - matches speeduino
-    publish_if_changed(cli, "MAS", &data.maf_sensor.to_string(), 0)?; // Mass Air Flow
+    // Engine parameters
+    publish_if_changed(
+        cli,
+        &format!("{}/RPM", base_topic),
+        &data.engine_rpm.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/TPS", base_topic),
+        &data.throttle_pos.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/MAP", base_topic),
+        &data.intake_pressure.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/MAT", base_topic),
+        &data.intake_temp.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/CLT", base_topic),
+        &data.coolant_temp.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/BAT", base_topic),
+        &data.control_module_voltage.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/BAR", base_topic),
+        &data.baro_pressure.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/VSS", base_topic),
+        &data.vehicle_speed.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/GER", base_topic),
+        &data.actual_gear.to_string(),
+        0,
+    )?;
+
+    // Other parameters
+    publish_if_changed(
+        cli,
+        &format!("{}/ELD", base_topic),
+        &data.engine_load.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FST", base_topic),
+        &data.fuel_trim_short_b1.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FLT", base_topic),
+        &data.fuel_trim_long_b1.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FS2", base_topic),
+        &data.fuel_trim_short_b2.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FL2", base_topic),
+        &data.fuel_trim_long_b2.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FPR", base_topic),
+        &data.fuel_pressure.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/TAD", base_topic),
+        &data.timing_advance.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/MAS", base_topic),
+        &data.maf_sensor.to_string(),
+        0,
+    )?;
 
     // O2 Sensors
-    publish_if_changed(cli, "O21", &data.o2_sensor_voltage_b1s1.to_string(), 0)?;
-    publish_if_changed(cli, "O22", &data.o2_sensor_voltage_b1s2.to_string(), 0)?;
-    publish_if_changed(cli, "O23", &data.o2_sensor_voltage_b1s3.to_string(), 0)?;
-    publish_if_changed(cli, "O24", &data.o2_sensor_voltage_b1s4.to_string(), 0)?;
+    publish_if_changed(
+        cli,
+        &format!("{}/O21", base_topic),
+        &data.o2_sensor_voltage_b1s1.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/O22", base_topic),
+        &data.o2_sensor_voltage_b1s2.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/O23", base_topic),
+        &data.o2_sensor_voltage_b1s3.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/O24", base_topic),
+        &data.o2_sensor_voltage_b1s4.to_string(),
+        0,
+    )?;
 
     // Engine Run Data
-    publish_if_changed(cli, "ERT", &data.engine_run_time.to_string(), 0)?;
-    publish_if_changed(cli, "MIL", &data.distance_with_mil.to_string(), 0)?;
-    publish_if_changed(cli, "FRL", &data.fuel_rail_pressure.to_string(), 0)?;
+    publish_if_changed(
+        cli,
+        &format!("{}/ERT", base_topic),
+        &data.engine_run_time.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/MIL", base_topic),
+        &data.distance_with_mil.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FRL", base_topic),
+        &data.fuel_rail_pressure.to_string(),
+        0,
+    )?;
 
     // EGR Related
-    publish_if_changed(cli, "EGR", &data.commanded_egr.to_string(), 0)?;
-    publish_if_changed(cli, "EGE", &data.egr_error.to_string(), 0)?;
-    publish_if_changed(cli, "EGT", &data.egr_temp.to_string(), 0)?;
+    publish_if_changed(
+        cli,
+        &format!("{}/EGR", base_topic),
+        &data.commanded_egr.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/EGE", base_topic),
+        &data.egr_error.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/EGT", base_topic),
+        &data.egr_temp.to_string(),
+        0,
+    )?;
 
     // Turbo Related
-    publish_if_changed(cli, "TBR", &data.turbo_rpm.to_string(), 0)?;
-    publish_if_changed(cli, "TB1", &data.turbo_temp_1.to_string(), 0)?;
-    publish_if_changed(cli, "TB2", &data.turbo_temp_2.to_string(), 0)?;
-    publish_if_changed(cli, "CAT", &data.charge_air_temp.to_string(), 0)?;
+    publish_if_changed(
+        cli,
+        &format!("{}/TBR", base_topic),
+        &data.turbo_rpm.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/TB1", base_topic),
+        &data.turbo_temp_1.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/TB2", base_topic),
+        &data.turbo_temp_2.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/CAT", base_topic),
+        &data.charge_air_temp.to_string(),
+        0,
+    )?;
 
     // Additional Parameters
-    publish_if_changed(cli, "ETH", &data.ethanol_fuel.to_string(), 0)?; // ETH - matches speeduino
-    publish_if_changed(cli, "OIT", &data.engine_oil_temp.to_string(), 0)?;
-    publish_if_changed(cli, "FRT", &data.engine_fuel_rate.to_string(), 0)?;
-    publish_if_changed(cli, "FRM", &data.fuel_rate_mg.to_string(), 0)?; // FRM - matches speeduino
-    publish_if_changed(cli, "DEF", &data.def_dosing.to_string(), 0)?;
-    publish_if_changed(cli, "ODO", &data.odometer.to_string(), 0)?;
+    publish_if_changed(
+        cli,
+        &format!("{}/ETH", base_topic),
+        &data.ethanol_fuel.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/OIT", base_topic),
+        &data.engine_oil_temp.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FRT", base_topic),
+        &data.engine_fuel_rate.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/FRM", base_topic),
+        &data.fuel_rate_mg.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/DEF", base_topic),
+        &data.def_dosing.to_string(),
+        0,
+    )?;
+    publish_if_changed(
+        cli,
+        &format!("{}/ODO", base_topic),
+        &data.odometer.to_string(),
+        0,
+    )?;
 
     Ok(())
 }
