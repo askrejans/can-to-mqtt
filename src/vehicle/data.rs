@@ -66,4 +66,22 @@ pub struct VehicleData {
     pub warmups_since_codes_cleared: u8,
     pub distance_since_codes_cleared: u16,
     pub time_with_mil: u16,
+
+    // Additional Diesel/Advanced Engine Data
+    pub actual_egr: u8,
+    pub diesel_intake_flow: u8,
+    pub egr_temp: i16,
+    pub exhaust_pressure: u16,
+    pub turbo_pressure: f32,
+    pub turbo_rpm: u32,
+    pub turbo_temp_1: i16,
+    pub turbo_temp_2: i16,
+    pub charge_air_temp: i16,
+    pub dpf_pressure: f32,
+    pub dpf_temp: f32,
+    pub nox_sensor: f32,
+    pub fuel_rate_mg: f32,
+    pub actual_gear: f32,
+    pub def_dosing: f32,
+    pub odometer: f32,
 }

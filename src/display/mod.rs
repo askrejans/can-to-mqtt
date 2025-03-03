@@ -100,7 +100,28 @@ pub fn display_vehicle_data(vehicle_data: &VehicleData) {
         fmt_val(format!("{:.1}%", vehicle_data.absolute_load))
     ]);
 
-    // Restore normal font size when exiting
+    table.add_row(row![
+        fmt_cell("Turbo RPM"),
+        fmt_val(format!("{} RPM", vehicle_data.turbo_rpm)),
+        fmt_cell("Turbo Temp 1"),
+        fmt_val(format!("{}°C", vehicle_data.turbo_temp_1)),
+        fmt_cell("Turbo Temp 2"),
+        fmt_val(format!("{}°C", vehicle_data.turbo_temp_2)),
+        fmt_cell("Charge Air"),
+        fmt_val(format!("{}°C", vehicle_data.charge_air_temp))
+    ]);
+
+    table.add_row(row![
+        fmt_cell("DPF Press"),
+        fmt_val(format!("{:.1} kPa", vehicle_data.dpf_pressure)),
+        fmt_cell("DPF Temp"),
+        fmt_val(format!("{}°C", vehicle_data.dpf_temp)),
+        fmt_cell("Gear Ratio"),
+        fmt_val(format!("{:.3}", vehicle_data.actual_gear)),
+        fmt_cell("DEF Dosing"),
+        fmt_val(format!("{:.1}%", vehicle_data.def_dosing))
+    ]);
+
     table.printstd();
-    print!("\x1B[?3l"); // Disable 132 column mode
+    print!("\x1B[?3l");
 }

@@ -168,6 +168,65 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
                         ((bytes[3] as u16) << 8 | bytes[4] as u16) as f32 / 20.0; // L/h
                 }
             }
+            0x69 => {
+                if bytes.len() >= 5 {
+                    data.actual_egr = bytes[3];
+                    // Note: commanded_egr already exists
+                    // egr_error already exists
+                }
+            }
+            0x6B => {
+                if bytes.len() >= 5 {
+                    data.egr_temp = ((bytes[3] as u16) << 8 | bytes[4] as u16) as i16 - 40;
+                }
+            }
+            0x73 => {
+                if bytes.len() >= 5 {
+                    data.exhaust_pressure = (bytes[3] as u16) << 8 | bytes[4] as u16;
+                }
+            }
+            0x74 => {
+                if bytes.len() >= 5 {
+                    data.turbo_rpm = ((bytes[3] as u32) << 8 | bytes[4] as u32) * 10;
+                }
+            }
+            0x75 | 0x76 => {
+                if bytes.len() >= 5 {
+                    let temp = ((bytes[3] as i16) << 8 | bytes[4] as i16) - 40;
+                    if bytes[2] == 0x75 {
+                        data.turbo_temp_1 = temp;
+                    } else {
+                        data.turbo_temp_2 = temp;
+                    }
+                }
+            }
+            0x77 => {
+                if bytes.len() >= 5 {
+                    data.charge_air_temp = ((bytes[3] as i16) << 8 | bytes[4] as i16) - 40;
+                }
+            }
+            0xA2 => {
+                if bytes.len() >= 5 {
+                    data.fuel_rate_mg = ((bytes[3] as u16) << 8 | bytes[4] as u16) as f32 / 32.0;
+                }
+            }
+            0xA4 => {
+                if bytes.len() >= 5 {
+                    data.actual_gear = ((bytes[3] as u16) << 8 | bytes[4] as u16) as f32 / 1000.0;
+                }
+            }
+            0xA5 => {
+                data.def_dosing = bytes[3] as f32 / 2.0;
+            }
+            0xA6 => {
+                if bytes.len() >= 7 {
+                    data.odometer = ((bytes[3] as u32) << 24
+                        | (bytes[4] as u32) << 16
+                        | (bytes[5] as u32) << 8
+                        | bytes[6] as u32) as f32
+                        / 10.0;
+                }
+            }
             _ => {}
         }
     }
