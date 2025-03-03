@@ -69,50 +69,46 @@ async fn main() -> std::io::Result<()> {
         (0x5E, "Engine fuel rate"),
     ];
 
-    const BATCH_SIZE: usize = 20;
-
     loop {
-        for chunk in pids.chunks(BATCH_SIZE) {
-            // Send requests for current batch
-            for (pid, desc) in chunk.iter() {
-                if let Err(e) = send_request(&socket_tx, *pid).await {
-                    eprintln!("Error sending request for {}: {}", desc, e);
-                    continue;
-                }
+        // Send all requests at once
+        for (pid, desc) in pids.iter() {
+            if let Err(e) = send_request(&socket_tx, *pid).await {
+                eprintln!("Error sending request for {}: {}", desc, e);
+                continue;
             }
-
-            // Quick check for responses
-            let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(50));
-            tokio::pin!(timeout);
-
-            let mut responses_received = 0;
-            while responses_received < chunk.len() {
-                tokio::select! {
-                    frame = socket_rx.next() => {
-                        match frame {
-                            Some(Ok(frame)) => {
-                                if let CanFrame::Data(frame) = frame {
-                                    if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
-                                        parse_obd_response(&frame, &mut vehicle_data);
-                                        responses_received += 1;
-                                    }
-                                }
-                            }
-                            Some(Err(e)) => eprintln!("Error reading frame: {}", e),
-                            None => break,
-                        }
-                    }
-                    _ = &mut timeout => {
-                        break;
-                    }
-                }
-            }
-
-            display_vehicle_data(&vehicle_data);
         }
 
-        // Wait 50ms before starting the next cycle
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Wait for responses with a longer timeout since we're handling all PIDs
+        let timeout = tokio::time::sleep(tokio::time::Duration::from_millis(200));
+        tokio::pin!(timeout);
+
+        let mut responses_received = 0;
+        while responses_received < pids.len() {
+            tokio::select! {
+                frame = socket_rx.next() => {
+                    match frame {
+                        Some(Ok(frame)) => {
+                            if let CanFrame::Data(frame) = frame {
+                                if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
+                                    parse_obd_response(&frame, &mut vehicle_data);
+                                    responses_received += 1;
+                                }
+                            }
+                        }
+                        Some(Err(e)) => eprintln!("Error reading frame: {}", e),
+                        None => break,
+                    }
+                }
+                _ = &mut timeout => {
+                    break;
+                }
+            }
+        }
+
+        display_vehicle_data(&vehicle_data);
+
+        // Wait before starting the next cycle
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
     }
 }
 
