@@ -2,8 +2,8 @@ use crate::vehicle::data::VehicleData;
 use prettytable::{Cell, Table, row};
 
 pub fn display_vehicle_data(vehicle_data: &VehicleData) {
-    // Clear screen, move cursor to top, and set small font
-    print!("\x1B[2J\x1B[1;1H\x1B[?3h"); // The ?3h code enables 132 column mode
+    // Only clear screen and move cursor to top
+    print!("\x1B[2J\x1B[1;1H");
 
     let mut table = Table::new();
 
@@ -123,5 +123,4 @@ pub fn display_vehicle_data(vehicle_data: &VehicleData) {
     ]);
 
     table.printstd();
-    print!("\x1B[?3l");
 }
