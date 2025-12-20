@@ -1,0 +1,38 @@
+[Unit]
+Description=CAN-to-MQTT Bridge Service
+Documentation=https://github.com/askrejans/can-to-mqtt
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/usr/local/bin/can-to-mqtt daemon --systemd
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+WatchdogSec=30s
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/run /var/log
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+# Environment
+Environment="CAN2MQTT_LOG_LEVEL=info"
+EnvironmentFile=-/etc/default/can-to-mqtt
+
+# User/Group (adjust as needed)
+User=root
+Group=root
+
+# Working directory
+WorkingDirectory=/usr/local/bin
+
+[Install]
+WantedBy=multi-user.target

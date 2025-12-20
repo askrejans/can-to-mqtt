@@ -1,4 +1,37 @@
+# CAN-to-MQTT Bridge Configuration Example
+# Copy this file to settings.toml and adjust values as needed
+
+# CAN Interface Configuration
 can_interface = "can0"
+
+# MQTT Broker Configuration
 mqtt_host = "localhost"
 mqtt_port = 1883
 mqtt_base_topic = "/GOLF86/ECU/"
+
+# MQTT Authentication (optional)
+# mqtt_username = "your_username"
+# mqtt_password = "your_password"
+# mqtt_client_id = "can-to-mqtt-unique-id"
+
+# MQTT Connection Settings
+mqtt_keep_alive_secs = 60
+mqtt_qos = 0  # 0, 1, or 2
+
+# Polling Intervals (milliseconds)
+poll_interval_high_freq_ms = 20    # High-priority PIDs (RPM, speed, etc.)
+poll_interval_regular_ms = 200     # Regular PIDs
+
+# Logging Configuration
+log_level = "info"  # trace, debug, info, warn, error
+
+# Prometheus Metrics
+prometheus_enabled = true
+prometheus_port = 9090
+
+# Display Configuration
+no_display = false
+
+# Enabled PIDs (empty list means all PIDs enabled)
+# enabled_pids = [0x0C, 0x0D, 0x04, 0x05]  # Example: only RPM, speed, load, coolant temp
+enabled_pids = []
