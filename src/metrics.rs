@@ -243,18 +243,14 @@ pub async fn start_metrics_server(
                     async move {
                         match req.uri().path() {
                             "/metrics" => {
-                                let encoder = metrics_exporter_prometheus::TextEncoder::new();
-                                let metric_families = metrics_exporter_prometheus::Exporter::default()
-                                    .registry()
-                                    .gather();
-                                let mut buffer = Vec::new();
-                                encoder.encode(&metric_families, &mut buffer).unwrap_or_default();
+                                let handle = metrics_exporter_prometheus::PrometheusHandle::current();
+                                let metrics = handle.render();
 
                                 Ok::<_, hyper::Error>(
                                     Response::builder()
                                         .status(StatusCode::OK)
                                         .header("Content-Type", "text/plain; version=0.0.4")
-                                        .body(Full::new(Bytes::from(buffer)))
+                                        .body(Full::new(Bytes::from(metrics)))
                                         .unwrap(),
                                 )
                             }

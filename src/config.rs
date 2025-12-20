@@ -1,5 +1,4 @@
 use config::{Config, File};
-use std::path::Path;
 use crate::error::{ConfigError, ConfigResult};
 use tracing::{warn, info};
 

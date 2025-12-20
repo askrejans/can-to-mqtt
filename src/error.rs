@@ -3,7 +3,6 @@
 //! This module defines all error types used throughout the application,
 //! with proper error chaining and context preservation.
 
-use std::fmt;
 use thiserror::Error;
 
 /// Errors related to CAN bus operations

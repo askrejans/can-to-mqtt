@@ -50,7 +50,7 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
         .finalize();
 
     // Create an MQTT client.
-    let cli = mqtt::Client::new(create_opts)
+    let mut cli = mqtt::Client::new(create_opts)
         .map_err(|e| MqttError::ClientCreation(e.to_string()))?;
 
     // Set a timeout for synchronous calls.
@@ -85,7 +85,7 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
 }
 
 /// Attempt to reconnect to MQTT broker with exponential backoff
-pub async fn reconnect_mqtt(client: &mqtt::Client, config: &AppConfig) -> MqttResult<()> {
+pub async fn reconnect_mqtt(client: &mqtt::Client, _config: &AppConfig) -> MqttResult<()> {
     let mut attempt = 0;
     let max_attempts = 10;
     
@@ -95,23 +95,9 @@ pub async fn reconnect_mqtt(client: &mqtt::Client, config: &AppConfig) -> MqttRe
         
         warn!("MQTT reconnection attempt {} of {}", attempt, max_attempts);
         
-        // Build connection options
-        let mut conn_opts_builder = mqtt::ConnectOptionsBuilder::new();
-        conn_opts_builder
-            .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_secs))
-            .clean_session(false)
-            .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60));
-
-        if let Some(ref username) = config.mqtt_username {
-            conn_opts_builder.user_name(username);
-            if let Some(ref password) = config.mqtt_password {
-                conn_opts_builder.password(password);
-            }
-        }
-
-        let conn_opts = conn_opts_builder.finalize();
-        
-        match client.reconnect(conn_opts) {
+        // The paho-mqtt client has automatic reconnection built in,
+        // so we just need to wait and check connection status
+        match client.reconnect() {
             Ok(_) => {
                 info!("Successfully reconnected to MQTT broker");
                 return Ok(());
