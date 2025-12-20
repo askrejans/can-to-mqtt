@@ -212,10 +212,10 @@ pub async fn start_metrics_server(
     use std::net::SocketAddr;
     use tokio::net::TcpListener;
 
-    // Install Prometheus recorder
+    // Install Prometheus recorder and get handle
     let builder = PrometheusBuilder::new();
-    builder
-        .install()
+    let handle = builder
+        .install_recorder()
         .map_err(|e| format!("Failed to install Prometheus recorder: {}", e))?;
 
     init_metrics();
@@ -236,14 +236,15 @@ pub async fn start_metrics_server(
 
             let io = TokioIo::new(stream);
             let health_state = health_state.clone();
+            let handle = handle.clone();
 
             tokio::spawn(async move {
                 let service = service_fn(move |req: Request<hyper::body::Incoming>| {
                     let health_state = health_state.clone();
+                    let handle = handle.clone();
                     async move {
                         match req.uri().path() {
                             "/metrics" => {
-                                let handle = metrics_exporter_prometheus::PrometheusHandle::current();
                                 let metrics = handle.render();
 
                                 Ok::<_, hyper::Error>(
