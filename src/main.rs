@@ -217,7 +217,7 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
     let vehicle_data = Arc::new(RwLock::new(VehicleData::default()));
 
     // Setup graceful shutdown
-    let mut shutdown_signal = setup_shutdown_signal();
+    let mut shutdown_signal = setup_shutdown_signal().await;
 
     // Spawn display task if not disabled
     if !config.no_display && atty::is(atty::Stream::Stdout) {
