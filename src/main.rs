@@ -89,10 +89,10 @@ fn init_logging(level: &str) {
         .or_else(|_| EnvFilter::try_new(level))
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    tracing_subscriber::registry()
+    let _ = tracing_subscriber::registry()
         .with(filter)
         .with(tracing_subscriber::fmt::layer())
-        .init();
+        .try_init();
 }
 
 /// Validate configuration file command
