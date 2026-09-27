@@ -235,6 +235,8 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
     let mut last_watchdog = SystemTime::now();
     let mut cleanup_counter = 0;
 
+    let telemetry_boot = format!("{}-{:?}", std::process::id(), SystemTime::now());
+    let mut telemetry_sequence = 0u64;
     info!("Starting main loop");
 
     // Main loop
@@ -278,6 +280,7 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                     high_freq_pids.len()
                 };
 
+                let mut captured_packets = Vec::new();
                 let mut responses_received = 0;
                 let mut vehicle_data_write = vehicle_data.write().await;
 
@@ -291,6 +294,10 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                                     
                                     if let CanFrame::Data(frame) = frame {
                                         if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
+                                            telemetry_sequence += 1;
+                                            if let Some(packet) = can_to_mqtt::telemetry::packet(frame.data(), &telemetry_boot, telemetry_sequence, SystemTime::now()) {
+                                                captured_packets.push(packet.to_string());
+                                            }
                                             parse_obd_response(&frame, &mut vehicle_data_write);
                                             record_obd_response();
                                             responses_received += 1;
@@ -335,6 +342,10 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                 }
 
                 if is_connected(&mqtt_client) {
+                    for packet in captured_packets {
+                        let message = paho_mqtt::Message::new(format!("{}/telemetry", config.mqtt_base_topic.trim_end_matches('/')), packet, 0);
+                        if let Err(error) = mqtt_client.publish(message) { warn!("Canonical OBD publish failed: {}", error); }
+                    }
                     let vehicle_data_read = vehicle_data.read().await;
                     if let Err(e) = publish_vehicle_data(&mqtt_client, &*vehicle_data_read, &config) {
                         warn!("Error publishing to MQTT: {}", e);

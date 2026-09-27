@@ -6,7 +6,7 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
     if bytes.len() >= 4 {
         match bytes[2] {
             0x04 => {
-                data.engine_load = (bytes[3] * 100) / 255;
+                data.engine_load = ((u16::from(bytes[3]) * 100) / 255) as u8;
             }
             0x05 => {
                 data.coolant_temp = bytes[3] as i16 - 40;
@@ -24,7 +24,7 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
                 data.fuel_trim_long_b2 = (bytes[3] as f32 - 128.0) * 100.0 / 128.0;
             }
             0x0A => {
-                data.fuel_pressure = bytes[3] * 3; // kPa
+                data.fuel_pressure = u16::from(bytes[3]) * 3; // kPa
             }
             0x0B => {
                 data.intake_pressure = bytes[3]; // kPa
@@ -49,7 +49,7 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
                 }
             }
             0x11 => {
-                data.throttle_pos = (bytes[3] * 100) / 255; // %
+                data.throttle_pos = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x14..=0x17 => {
                 // O2 Sensors 1-4 Bank 1
@@ -73,25 +73,25 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
             }
             0x22 => {
                 if bytes.len() >= 5 {
-                    data.fuel_rail_pressure = ((bytes[3] as u16) << 8 | bytes[4] as u16) as u16;
+                    data.fuel_rail_pressure = ((bytes[3] as u32) << 8 | bytes[4] as u32) as u32;
                 }
             }
             0x23 => {
                 if bytes.len() >= 5 {
-                    data.fuel_rail_pressure = ((bytes[3] as u16) << 8 | bytes[4] as u16) * 10; // kPa
+                    data.fuel_rail_pressure = ((bytes[3] as u32) << 8 | bytes[4] as u32) * 10; // kPa
                 }
             }
             0x2C => {
-                data.commanded_egr = (bytes[3] * 100) / 255; // %
+                data.commanded_egr = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x2D => {
                 data.egr_error = (bytes[3] as f32 - 128.0) * 100.0 / 128.0; // %
             }
             0x2E => {
-                data.commanded_evap_purge = (bytes[3] * 100) / 255; // %
+                data.commanded_evap_purge = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x2F => {
-                data.fuel_level = (bytes[3] * 100) / 255; // %
+                data.fuel_level = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x30 => {
                 data.warmups_since_codes_cleared = bytes[3];
@@ -123,28 +123,28 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
                 }
             }
             0x45 => {
-                data.relative_throttle_pos = (bytes[3] * 100) / 255; // %
+                data.relative_throttle_pos = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x46 => {
                 data.ambient_temp = bytes[3] as i16 - 40; // °C
             }
             0x47 => {
-                data.absolute_throttle_pos_b = (bytes[3] * 100) / 255; // %
+                data.absolute_throttle_pos_b = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x48 => {
-                data.absolute_throttle_pos_c = (bytes[3] * 100) / 255; // %
+                data.absolute_throttle_pos_c = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x49 => {
-                data.accelerator_pedal_pos_d = (bytes[3] * 100) / 255; // %
+                data.accelerator_pedal_pos_d = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x4A => {
-                data.accelerator_pedal_pos_e = (bytes[3] * 100) / 255; // %
+                data.accelerator_pedal_pos_e = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x4B => {
-                data.accelerator_pedal_pos_f = (bytes[3] * 100) / 255; // %
+                data.accelerator_pedal_pos_f = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x4C => {
-                data.commanded_throttle_actuator = (bytes[3] * 100) / 255; // %
+                data.commanded_throttle_actuator = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x4D => {
                 if bytes.len() >= 5 {
@@ -157,7 +157,7 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
                 }
             }
             0x52 => {
-                data.ethanol_fuel = (bytes[3] * 100) / 255; // %
+                data.ethanol_fuel = ((u16::from(bytes[3]) * 100) / 255) as u8; // %
             }
             0x5C => {
                 data.engine_oil_temp = bytes[3] as i16 - 40; // °C

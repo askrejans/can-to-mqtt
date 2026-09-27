@@ -23,10 +23,10 @@ pub struct VehicleData {
     pub catalyst_temp_b2s1: f32,
 
     // Pressure Data
-    pub fuel_pressure: u8,
+    pub fuel_pressure: u16,
     pub intake_pressure: u8,
     pub baro_pressure: u8,
-    pub fuel_rail_pressure: u16,
+    pub fuel_rail_pressure: u32,
     pub evap_system_vapor_pressure: f32,
 
     // Air and Fuel Data

@@ -7,3 +7,5 @@ pub mod metrics;
 pub mod mqtt_handler;
 pub mod obd;
 pub mod vehicle;
+
+pub mod telemetry;
