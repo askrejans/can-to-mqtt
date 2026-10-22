@@ -7,7 +7,11 @@ can_interface = "can0"
 # MQTT Broker Configuration
 mqtt_host = "localhost"
 mqtt_port = 1883
-mqtt_base_topic = "/GOLF86/ECU/"
+# Topic namespace. Set `car` for the G86 car computer layout
+# (/g86/<car>/obd/telemetry, /status, /health). An explicit mqtt_base_topic
+# wins over `car`; with neither, the legacy default /GOLF86/ECU/ is used.
+car = "golf86"
+# mqtt_base_topic = "/GOLF86/ECU/"
 
 # MQTT Authentication (optional)
 # mqtt_username = "your_username"

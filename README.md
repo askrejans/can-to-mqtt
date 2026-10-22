@@ -83,7 +83,7 @@ Create a configuration file at `/etc/g86-car-telemetry/can-to-mqtt.toml` or `./s
 can_interface = "can0"
 mqtt_host = "localhost"
 mqtt_port = 1883
-mqtt_base_topic = "/GOLF86/ECU/"
+car = "golf86"            # G86 namespace: /g86/golf86/obd
 
 # Optional settings (see src/example.settings.toml for all options)
 mqtt_username = "user"
@@ -95,7 +95,19 @@ prometheus_enabled = true
 prometheus_port = 9090
 ```
 
-Environment variables can override any setting using `CAN2MQTT_` prefix:
+### Topic namespace
+
+| Configured | Base topic | Notes |
+|---|---|---|
+| `mqtt_base_topic = "/X/Y/"` (or `CAN2MQTT_MQTT_BASE_TOPIC`) | `/X/Y/` | explicit value always wins |
+| `car = "golf86"` (or `CAN2MQTT_CAR`) | `/g86/golf86/obd` | G86 car computer layout (g86-logger sets this) |
+| neither | `/GOLF86/ECU/` | legacy default, unchanged so existing installs keep their topics |
+
+`car` is a slug: 1–32 lower-case letters, digits or hyphens, not starting with a hyphen.
+
+Environment variables override settings using the `CAN2MQTT_` prefix
+(`CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`,
+`MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`):
 ```bash
 export CAN2MQTT_MQTT_HOST=mqtt.example.com
 export CAN2MQTT_LOG_LEVEL=debug
@@ -153,7 +165,33 @@ Once running, the application:
 
 ### MQTT Topics
 
-Topics follow the pattern `{mqtt_base_topic}/{PARAMETER}`:
+| Topic | Retained | Payload |
+|---|---|---|
+| `<base>/telemetry` | no | G86 envelope schema 1, `source: "obd2/mode01"`, `partial: true`, one channel per received PID with its capture time |
+| `<base>/status` | yes (LWT) | `online` / `offline` |
+| `<base>/health` | yes | bridge health JSON, every 5 s and on state change (below) |
+| `<base>/<PARAMETER>` | yes | legacy scalar topics (below) |
+
+Health (G86 car computer contract):
+
+```json
+{"schema": 1, "bridge": "can-to-mqtt", "version": "0.3.1", "bootId": "…",
+ "timestampMs": 1792664130000, "state": "ok", "link": "connected",
+ "sources": ["obd2/mode01"], "rateHz": 41.2, "ageMs": 18,
+ "channels": ["ecuSpeedKmh", "engineLoad", "ignitionDeg", "rpm", "throttle"],
+ "errors": {"canErrors": 0, "publishErrors": 0, "timeouts": 12}, "clockSynced": true}
+```
+
+- `link`: `disconnected` (CAN socket closed), `connecting` (no OBD reply in 10 s), `connected`.
+- `state`: `down` unless connected; `degraded` when the last telemetry packet is
+  older than 2 s or a CAN/publish error happened in the last 5 s; else `ok`.
+  `timeouts` are counted but do not degrade: a car that lacks a polled PID
+  times out on every regular cycle.
+- `rateHz`: telemetry messages per second over the last 5 s; `ageMs`: age of the
+  last published capture; `channels`: keys published in the last 2 s;
+  `clockSynced`: kernel clock disciplined (adjtimex, no `STA_UNSYNC`).
+
+Legacy scalar topics follow the pattern `{mqtt_base_topic}/{PARAMETER}`:
 - `/GOLF86/ECU/RPM` - Engine RPM
 - `/GOLF86/ECU/VSS` - Vehicle speed
 - `/GOLF86/ECU/CLT` - Coolant temperature
