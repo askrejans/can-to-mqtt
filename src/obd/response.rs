@@ -73,7 +73,7 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
             }
             0x22 => {
                 if bytes.len() >= 5 {
-                    data.fuel_rail_pressure = ((bytes[3] as u32) << 8 | bytes[4] as u32) as u32;
+                    data.fuel_rail_pressure = (bytes[3] as u32) << 8 | bytes[4] as u32;
                 }
             }
             0x23 => {
@@ -216,14 +216,12 @@ pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
             0xA5 => {
                 data.def_dosing = bytes[3] as f32 / 2.0;
             }
-            0xA6 => {
-                if bytes.len() >= 7 {
-                    data.odometer = ((bytes[3] as u32) << 24
-                        | (bytes[4] as u32) << 16
-                        | (bytes[5] as u32) << 8
-                        | bytes[6] as u32) as f32
-                        / 10.0;
-                }
+            0xA6 if bytes.len() >= 7 => {
+                data.odometer = ((bytes[3] as u32) << 24
+                    | (bytes[4] as u32) << 16
+                    | (bytes[5] as u32) << 8
+                    | bytes[6] as u32) as f32
+                    / 10.0;
             }
             _ => {}
         }

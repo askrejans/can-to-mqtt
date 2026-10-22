@@ -62,7 +62,7 @@ async fn main() -> Result<(), AppError> {
 
     // Load configuration
     let mut config = load_configuration(cli.config.as_deref())
-        .map_err(|e| AppError::Config(e))?;
+        .map_err(AppError::Config)?;
 
     // Apply CLI overrides
     if cli.no_display {
@@ -130,7 +130,7 @@ async fn test_connection_command(config_path: Option<&str>) -> Result<(), AppErr
     info!("Testing connections...");
     
     let config = load_configuration(config_path)
-        .map_err(|e| AppError::Config(e))?;
+        .map_err(AppError::Config)?;
 
     println!("Testing CAN bus connection...");
     match CanSocket::open(&config.can_interface) {
@@ -207,7 +207,7 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
 
     // Setup MQTT client (once, outside loop)
     info!("Connecting to MQTT broker");
-    let mqtt_client = setup_mqtt(&config).map_err(|e| AppError::Mqtt(e))?;
+    let mqtt_client = setup_mqtt(&config).map_err(AppError::Mqtt)?;
     set_mqtt_connected(true);
     *health_state.mqtt_connected.write().await = true;
     info!("MQTT connection established");
@@ -299,17 +299,17 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                                     record_can_frame_received();
                                     *health_state.last_can_frame.write().await = Some(SystemTime::now());
                                     
-                                    if let CanFrame::Data(frame) = frame {
-                                        if frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap()) {
-                                            health.on_reply(Instant::now());
-                                            telemetry_sequence += 1;
-                                            if let Some(packet) = can_to_mqtt::telemetry::packet(frame.data(), &telemetry_boot, telemetry_sequence, SystemTime::now()) {
-                                                captured_packets.push(packet);
-                                            }
-                                            parse_obd_response(&frame, &mut vehicle_data_write);
-                                            record_obd_response();
-                                            responses_received += 1;
+                                    if let CanFrame::Data(frame) = frame
+                                        && frame.id() == Id::Standard(StandardId::new(OBD_RESPONSE_ID).unwrap())
+                                    {
+                                        health.on_reply(Instant::now());
+                                        telemetry_sequence += 1;
+                                        if let Some(packet) = can_to_mqtt::telemetry::packet(frame.data(), &telemetry_boot, telemetry_sequence, SystemTime::now()) {
+                                            captured_packets.push(packet);
                                         }
+                                        parse_obd_response(&frame, &mut vehicle_data_write);
+                                        record_obd_response();
+                                        responses_received += 1;
                                     }
                                 }
                                 Some(Err(e)) => {
@@ -365,7 +365,7 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                         }
                     }
                     let vehicle_data_read = vehicle_data.read().await;
-                    if let Err(e) = publish_vehicle_data(&mqtt_client, &*vehicle_data_read, &config) {
+                    if let Err(e) = publish_vehicle_data(&mqtt_client, &vehicle_data_read, &config) {
                         warn!("Error publishing to MQTT: {}", e);
                         record_mqtt_publish_error();
                     } else {
@@ -374,12 +374,12 @@ async fn run_application(config: AppConfig) -> Result<(), AppError> {
                 }
 
                 // Bridge health: every 5 s and on a state/link change.
-                if is_connected(&mqtt_client) {
-                    if let Some(payload) = health.due(Instant::now(), wall_ms(), clock_synced()) {
-                        publish_status(&mqtt_client, &config, true);
-                        let message = paho_mqtt::Message::new_retained(health_topic.as_str(), payload.to_string(), 0);
-                        if let Err(e) = mqtt_client.publish(message) { warn!("Health publish failed: {}", e); }
-                    }
+                if is_connected(&mqtt_client)
+                    && let Some(payload) = health.due(Instant::now(), wall_ms(), clock_synced())
+                {
+                    publish_status(&mqtt_client, &config, true);
+                    let message = paho_mqtt::Message::new_retained(health_topic.as_str(), payload.to_string(), 0);
+                    if let Err(e) = mqtt_client.publish(message) { warn!("Health publish failed: {}", e); }
                 }
 
                 // Update cycle counter
@@ -473,7 +473,7 @@ fn spawn_display_task(vehicle_data: Arc<RwLock<VehicleData>>) {
         loop {
             interval.tick().await;
             let data = vehicle_data.read().await;
-            display_vehicle_data(&*data);
+            display_vehicle_data(&data);
         }
     });
 }

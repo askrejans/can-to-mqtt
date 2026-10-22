@@ -120,13 +120,13 @@ impl AppConfig {
             return Err(ConfigError::MissingField("can_interface".to_string()));
         }
 
-        if let Some(car) = &self.car {
-            if !valid_car(car) {
-                return Err(ConfigError::InvalidValue {
-                    field: "car".to_string(),
-                    reason: "Use 1-32 lower-case letters, digits or hyphens, not starting with a hyphen".to_string(),
-                });
-            }
+        if let Some(car) = &self.car
+            && !valid_car(car)
+        {
+            return Err(ConfigError::InvalidValue {
+                field: "car".to_string(),
+                reason: "Use 1-32 lower-case letters, digits or hyphens, not starting with a hyphen".to_string(),
+            });
         }
 
         if self.mqtt_base_topic.trim_matches('/').is_empty() || self.mqtt_base_topic.contains(['#', '+']) {
@@ -191,11 +191,11 @@ impl AppConfig {
             self.mqtt_host = val;
         }
 
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_PORT") {
-            if let Ok(port) = val.parse() {
-                info!("Overriding mqtt_port from environment: {}", port);
-                self.mqtt_port = port;
-            }
+        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_PORT")
+            && let Ok(port) = val.parse()
+        {
+            info!("Overriding mqtt_port from environment: {}", port);
+            self.mqtt_port = port;
         }
 
         if let Ok(val) = std::env::var("CAN2MQTT_MQTT_BASE_TOPIC") {
@@ -370,19 +370,17 @@ fn load_from_path(path: &str) -> ConfigResult<Config> {
 /// * `Ok(Config)` - If a configuration file is successfully loaded from any of the default paths.
 /// * `Err(ConfigError)` - If there is an error loading the configuration from all default paths.
 fn load_default_paths() -> ConfigResult<Config> {
-    if let Ok(exe_dir) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_dir.parent() {
-            let default_path = exe_dir.join("settings.toml");
-
-            if let Ok(path_str) = default_path.to_str().ok_or("Invalid path") {
-                if let Ok(config) = Config::builder()
-                    .add_source(File::with_name(path_str))
-                    .build()
-                {
-                    info!("Loaded configuration from: {}", default_path.display());
-                    return Ok(config);
-                }
-            }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(exe_dir) = exe.parent()
+    {
+        let default_path = exe_dir.join("settings.toml");
+        if let Some(path_str) = default_path.to_str()
+            && let Ok(config) = Config::builder()
+                .add_source(File::with_name(path_str))
+                .build()
+        {
+            info!("Loaded configuration from: {}", default_path.display());
+            return Ok(config);
         }
     }
 

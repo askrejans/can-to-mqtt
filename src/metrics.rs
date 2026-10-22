@@ -30,6 +30,12 @@ pub struct HealthState {
     pub last_mqtt_publish: Arc<RwLock<Option<SystemTime>>>,
 }
 
+impl Default for HealthState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HealthState {
     pub fn new() -> Self {
         Self {

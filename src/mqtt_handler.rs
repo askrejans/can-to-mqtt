@@ -162,7 +162,7 @@ pub fn publish_if_changed(
         return Err(MqttError::InvalidConfig("Empty topic or payload".to_string()));
     }
 
-    if qos < 0 || qos > 2 {
+    if !(0..=2).contains(&qos) {
         return Err(MqttError::InvalidConfig("Invalid QoS level".to_string()));
     }
 
@@ -179,7 +179,7 @@ pub fn publish_if_changed(
     // Check if value has changed
     let should_publish = last_values
         .get(topic)
-        .map_or(true, |(last_value, _)| last_value != payload);
+        .is_none_or(|(last_value, _)| last_value != payload);
 
     if should_publish {
         debug!("Publishing changed value to topic: {}", topic);
