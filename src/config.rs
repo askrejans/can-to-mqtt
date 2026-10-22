@@ -2,6 +2,19 @@ use config::{Config, File};
 use crate::error::{ConfigError, ConfigResult};
 use tracing::{warn, info};
 
+/// Base topic used when neither `mqtt_base_topic` nor `car` is configured
+/// (unchanged since 0.2 so existing installs keep their topics).
+pub const LEGACY_BASE_TOPIC: &str = "/GOLF86/ECU/";
+
+/// Valid car slug: `^[a-z0-9][a-z0-9-]{0,31}$` (G86 contract).
+pub fn valid_car(car: &str) -> bool {
+    let bytes = car.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 32
+        && bytes[0] != b'-'
+        && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+}
+
 /// Struct to hold the application configuration.
 #[derive(Debug, Clone)]
 pub struct AppConfig {
@@ -14,8 +27,15 @@ pub struct AppConfig {
     /// The MQTT broker port number.
     pub mqtt_port: u16,
 
-    /// The base topic of MQTT where data is pushed
+    /// The base topic of MQTT where data is pushed (resolved, see `resolve_base_topic`)
     pub mqtt_base_topic: String,
+
+    /// Car slug for the G86 namespace: base topic `/g86/<car>/obd` unless
+    /// `mqtt_base_topic` is set explicitly.
+    pub car: Option<String>,
+
+    /// True when `mqtt_base_topic` came from the file or the environment.
+    pub mqtt_base_topic_explicit: bool,
 
     /// Optional MQTT username for authentication
     pub mqtt_username: Option<String>,
@@ -60,7 +80,9 @@ impl Default for AppConfig {
             can_interface: "can0".to_string(),
             mqtt_host: "localhost".to_string(),
             mqtt_port: 1883,
-            mqtt_base_topic: "/GOLF86/ECU/".to_string(),
+            mqtt_base_topic: LEGACY_BASE_TOPIC.to_string(),
+            car: None,
+            mqtt_base_topic_explicit: false,
             mqtt_username: None,
             mqtt_password: None,
             mqtt_client_id: None,
@@ -96,6 +118,22 @@ impl AppConfig {
         // Validate CAN interface
         if self.can_interface.is_empty() {
             return Err(ConfigError::MissingField("can_interface".to_string()));
+        }
+
+        if let Some(car) = &self.car {
+            if !valid_car(car) {
+                return Err(ConfigError::InvalidValue {
+                    field: "car".to_string(),
+                    reason: "Use 1-32 lower-case letters, digits or hyphens, not starting with a hyphen".to_string(),
+                });
+            }
+        }
+
+        if self.mqtt_base_topic.trim_matches('/').is_empty() || self.mqtt_base_topic.contains(['#', '+']) {
+            return Err(ConfigError::InvalidValue {
+                field: "mqtt_base_topic".to_string(),
+                reason: "Must be a non-empty topic without wildcards".to_string(),
+            });
         }
 
         // Validate MQTT QoS
@@ -160,6 +198,17 @@ impl AppConfig {
             }
         }
 
+        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_BASE_TOPIC") {
+            info!("Overriding mqtt_base_topic from environment: {}", val);
+            self.mqtt_base_topic = val;
+            self.mqtt_base_topic_explicit = true;
+        }
+
+        if let Ok(val) = std::env::var("CAN2MQTT_CAR") {
+            info!("Overriding car from environment: {}", val);
+            self.car = Some(val);
+        }
+
         if let Ok(val) = std::env::var("CAN2MQTT_MQTT_USERNAME") {
             info!("Overriding mqtt_username from environment");
             self.mqtt_username = Some(val);
@@ -174,6 +223,30 @@ impl AppConfig {
             info!("Overriding log_level from environment: {}", val);
             self.log_level = val;
         }
+    }
+}
+
+impl AppConfig {
+    /// Resolve the base topic: an explicit `mqtt_base_topic` wins, then
+    /// `/g86/<car>/obd` when `car` is set, else the legacy default.
+    pub fn resolve_base_topic(&mut self) {
+        if self.mqtt_base_topic_explicit {
+            info!("MQTT base topic: {} (configured)", self.mqtt_base_topic);
+        } else if let Some(car) = &self.car {
+            self.mqtt_base_topic = format!("/g86/{car}/obd");
+            info!("MQTT base topic: {} (car {})", self.mqtt_base_topic, car);
+        } else {
+            self.mqtt_base_topic = LEGACY_BASE_TOPIC.to_string();
+            warn!(
+                "MQTT base topic: {} (legacy default; set car or mqtt_base_topic)",
+                self.mqtt_base_topic
+            );
+        }
+    }
+
+    /// Base topic without a trailing slash, for `<base>/telemetry`, `/status`, `/health`.
+    pub fn base(&self) -> &str {
+        self.mqtt_base_topic.trim_end_matches('/')
     }
 }
 
@@ -214,10 +287,9 @@ pub fn load_configuration(config_path: Option<&str>) -> ConfigResult<AppConfig> 
             }) as u16,
         mqtt_base_topic: settings
             .get_string("mqtt_base_topic")
-            .unwrap_or_else(|_| {
-                warn!("mqtt_base_topic not found in config, using default: /GOLF86/ECU/");
-                "/GOLF86/ECU/".to_string()
-            }),
+            .unwrap_or_else(|_| LEGACY_BASE_TOPIC.to_string()),
+        car: settings.get_string("car").ok(),
+        mqtt_base_topic_explicit: settings.get_string("mqtt_base_topic").is_ok(),
         mqtt_username: settings.get_string("mqtt_username").ok(),
         mqtt_password: settings.get_string("mqtt_password").ok(),
         mqtt_client_id: settings.get_string("mqtt_client_id").ok(),
@@ -254,6 +326,7 @@ pub fn load_configuration(config_path: Option<&str>) -> ConfigResult<AppConfig> 
 
     // Apply environment variable overrides
     config.apply_env_overrides();
+    config.resolve_base_topic();
 
     // Validate configuration
     config.validate()?;
@@ -333,4 +406,45 @@ fn load_default_paths() -> ConfigResult<Config> {
 
     warn!("No configuration file found, using defaults");
     Ok(Config::default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load(text: &str) -> ConfigResult<AppConfig> {
+        let dir = std::env::temp_dir().join(format!("can2mqtt-{}-{}", std::process::id(), text.len()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("settings.toml");
+        std::fs::write(&path, text).unwrap();
+        let result = load_configuration(path.to_str());
+        std::fs::remove_dir_all(&dir).unwrap();
+        result
+    }
+
+    #[test]
+    fn base_topic_resolution_keeps_legacy_installs() {
+        // Nothing set: legacy default, unchanged.
+        assert_eq!(load("can_interface = \"can0\"\n").unwrap().mqtt_base_topic, LEGACY_BASE_TOPIC);
+        // Car set: G86 namespace.
+        let c = load("car = \"qa-car\"\n").unwrap();
+        assert_eq!(c.mqtt_base_topic, "/g86/qa-car/obd");
+        assert_eq!(c.base(), "/g86/qa-car/obd");
+        // Explicit base topic wins over car.
+        let c = load("car = \"qa-car\"\nmqtt_base_topic = \"/CAR/OBD/\"\n").unwrap();
+        assert_eq!(c.mqtt_base_topic, "/CAR/OBD/");
+        assert_eq!(c.base(), "/CAR/OBD");
+    }
+
+    #[test]
+    fn car_slug_is_validated() {
+        for bad in ["Golf86", "-car", "car_86", "", "a234567890123456789012345678901234"] {
+            assert!(!valid_car(bad), "{bad}");
+        }
+        for good in ["golf86", "qa-car", "0", "a2345678901234567890123456789012"] {
+            assert!(valid_car(good), "{good}");
+        }
+        assert!(load("car = \"Golf 86\"\n").is_err());
+        assert!(load("mqtt_base_topic = \"/a/#\"\n").is_err());
+    }
 }

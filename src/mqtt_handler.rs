@@ -61,7 +61,9 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
     conn_opts_builder
         .keep_alive_interval(Duration::from_secs(config.mqtt_keep_alive_secs))
         .clean_session(false)
-        .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60));
+        .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60))
+        // Availability (Home Assistant / G86 car computer): retained, LWT `offline`.
+        .will_message(mqtt::Message::new_retained(status_topic(config), "offline", 1));
 
     // Add authentication if configured
     if let Some(ref username) = config.mqtt_username {
@@ -79,9 +81,24 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
         .map_err(|e| MqttError::Connection(e.to_string()))?;
 
     info!("Successfully connected to MQTT broker");
+    publish_status(&cli, config, true);
 
     // Return the configured and connected MQTT client.
     Ok(cli)
+}
+
+/// `<base>/status` availability topic.
+pub fn status_topic(config: &AppConfig) -> String {
+    format!("{}/status", config.base())
+}
+
+/// Publish `online`/`offline` (retained). Re-sent with every health message so
+/// a broker that delivered the LWT during a reconnect is corrected.
+pub fn publish_status(cli: &mqtt::Client, config: &AppConfig, online: bool) {
+    let message = mqtt::Message::new_retained(status_topic(config), if online { "online" } else { "offline" }, 1);
+    if let Err(e) = cli.publish(message) {
+        warn!("Status publish failed: {}", e);
+    }
 }
 
 /// Attempt to reconnect to MQTT broker with exponential backoff

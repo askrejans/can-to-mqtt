@@ -199,7 +199,7 @@ checksum = "f61dac84819c6588b558454b194026eb1f09c293b9036ae9b159e74e73ab6cf9"
 
 [[package]]
 name = "can-to-mqtt"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "atty",
  "chrono",
@@ -210,6 +210,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "lazy_static",
+ "libc",
  "metrics",
  "metrics-exporter-prometheus",
  "paho-mqtt",
