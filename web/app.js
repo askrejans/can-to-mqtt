@@ -58,7 +58,7 @@ function topics() {
       ? $("mode").value === "passive"
         ? `/g86/${car}/sensors/${$("passive_profile").value || "can"}`
         : `/g86/${car}/obd`
-      : "/GOLF86/ECU");
+      : "/telemetry/can");
   $("topics").textContent =
     `Canonical topic: ${prefix}/telemetry. Only actual fresh fields are sent.`;
 }

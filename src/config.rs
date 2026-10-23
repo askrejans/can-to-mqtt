@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-pub const LEGACY_BASE_TOPIC: &str = "/GOLF86/ECU/";
+pub const DEFAULT_BASE_TOPIC: &str = "/telemetry/can";
 pub fn valid_car(car: &str) -> bool {
     !car.is_empty()
         && car.len() <= 32
@@ -64,7 +64,7 @@ impl Default for AppConfig {
             passive_signals: vec![],
             mqtt_host: "localhost".into(),
             mqtt_port: 1883,
-            mqtt_base_topic: LEGACY_BASE_TOPIC.into(),
+            mqtt_base_topic: DEFAULT_BASE_TOPIC.into(),
             car: None,
             mqtt_base_topic_explicit: false,
             mqtt_username: None,
@@ -305,7 +305,7 @@ impl AppConfig {
                     format!("/g86/{car}/obd")
                 }
             } else {
-                LEGACY_BASE_TOPIC.into()
+                DEFAULT_BASE_TOPIC.into()
             }
         }
     }
@@ -376,6 +376,8 @@ fn default_paths() -> Vec<PathBuf> {
         paths.push(parent.join("settings.toml"))
     }
     paths.extend([
+        "/etc/can-to-mqtt/settings.toml".into(),
+        "/etc/can-to-mqtt/can-to-mqtt.toml".into(),
         "/usr/etc/g86-car-telemetry/can-to-mqtt.toml".into(),
         "/etc/g86-car-telemetry/can-to-mqtt.toml".into(),
     ]);
@@ -383,7 +385,7 @@ fn default_paths() -> Vec<PathBuf> {
 }
 
 fn private_dir() -> PathBuf {
-    std::env::var_os("XDG_STATE_HOME")
+    let current = std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
             std::env::var_os("HOME")
@@ -392,7 +394,13 @@ fn private_dir() -> PathBuf {
                 .unwrap_or_else(std::env::temp_dir)
                 .join(".config")
         })
-        .join("g86-can-to-mqtt")
+        .join("can-to-mqtt");
+    let legacy = current.with_file_name("g86-can-to-mqtt");
+    if !current.exists() && legacy.exists() {
+        legacy
+    } else {
+        current
+    }
 }
 
 #[cfg(test)]
@@ -413,7 +421,22 @@ mod tests {
     fn preserves_legacy_and_explicit_topic_precedence() {
         assert_eq!(
             load("can_interface='can0'").unwrap().mqtt_base_topic,
-            LEGACY_BASE_TOPIC
+            DEFAULT_BASE_TOPIC
+        );
+        assert_eq!(
+            load("mqtt_base_topic='/GOLF86/ECU/'").unwrap().base(),
+            "/GOLF86/ECU"
+        );
+        let paths = default_paths();
+        assert!(
+            paths
+                .iter()
+                .position(|p| p == Path::new("/etc/can-to-mqtt/settings.toml"))
+                .unwrap()
+                < paths
+                    .iter()
+                    .position(|p| p == Path::new("/etc/g86-car-telemetry/can-to-mqtt.toml"))
+                    .unwrap()
         );
         assert_eq!(load("car='qa-car'").unwrap().base(), "/g86/qa-car/obd");
         assert_eq!(

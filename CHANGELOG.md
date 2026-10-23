@@ -1,8 +1,10 @@
 # Changelog
 
-## 0.4.1
+## 0.5.0
 
-- Document standalone use with arbitrary MQTT brokers and explicit topic prefixes; keep existing topic and telemetry contracts unchanged.
+- **Migration:** an unconfigured installation now publishes below `/telemetry/can` instead of `/GOLF86/ECU/`. Set `mqtt_base_topic` explicitly to `/GOLF86/ECU/` before upgrading if consumers need the former default. Explicit settings and optional `car` namespaces keep their topics.
+
+- Document standalone use with arbitrary MQTT brokers and explicit topic prefixes; preserve explicit topic prefixes and telemetry packet contracts.
 - Add an explicit MQTT topic prefix to guided setup; vehicle scope is optional. Accept `X-Bridge-Action` for configuration while preserving `X-G86-Action`.
 
 ## 0.4.0

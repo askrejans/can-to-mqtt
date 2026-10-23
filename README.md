@@ -1,6 +1,6 @@
 # CAN to MQTT
 
-A local, read-only telemetry bridge for Linux SocketCAN. Version 0.4 adds a guided browser interface, ECU discovery, fresh canonical MQTT packets, and explicit passive signal mappings.
+A local, read-only telemetry bridge for Linux SocketCAN. Version 0.5 provides a guided browser interface, ECU discovery, fresh canonical MQTT packets, and explicit passive signal mappings.
 
 The three setup steps are **Connect → MQTT → Live check**. The live check shows the measurements that actually arrived, their age, the chosen ECU, and broker state. An open interface or saved configuration never counts as verified telemetry.
 
@@ -8,7 +8,7 @@ The three setup steps are **Connect → MQTT → Live check**. The live check sh
 
 This bridge can publish to any MQTT broker. Configure the broker host, credentials and `mqtt_base_topic` for your own installation; use TLS for a broker reached across an untrusted network. The source distribution and ordinary binaries have no account, subscription or activation dependency. Product-specific subscription checks belong to separately built managed distributions.
 
-For a custom namespace, set `mqtt_base_topic` explicitly (for example `/telemetry/car-1/engine`). An explicit prefix takes precedence over `car`. The optional legacy `car` shortcut keeps its existing `/g86/<car>/…` namespace for compatibility; omitting it does not create an account or select a vehicle profile. Existing defaults and packet fields remain compatible.
+For a custom namespace, set `mqtt_base_topic` explicitly (for example `/telemetry/car-1/engine`). An explicit prefix takes precedence over `car`. The optional legacy `car` shortcut keeps its existing `/g86/<car>/…` namespace for compatibility; omitting it does not create an account or select a vehicle profile. Packet fields remain compatible. Fresh installations use `/telemetry/can`; to keep the former default, explicitly set the prefix to `/GOLF86/ECU/` before upgrading.
 
 ## Choose the right connection
 
@@ -35,7 +35,7 @@ cp example.settings.toml settings.toml
 ./can-to-mqtt --config settings.toml
 ```
 
-Open **http://127.0.0.1:9093/** on that computer. On first start the service creates a random access token and logs the **file path**, never its value. Read that private file to sign in. The default is `$XDG_STATE_HOME/g86-can-to-mqtt/http-9093.token`, or `$HOME/.config/g86-can-to-mqtt/http-9093.token` when XDG state is unset. The browser keeps the token only in that tab's session storage. Sign out to clear it.
+Open **http://127.0.0.1:9093/** on that computer. On first start the service creates a random access token and logs the **file path**, never its value. Read that private file to sign in. The default is `$XDG_STATE_HOME/can-to-mqtt/http-9093.token`, or `$HOME/.config/can-to-mqtt/http-9093.token` when XDG state is unset. An existing legacy `g86-can-to-mqtt` state directory is reused when no new directory exists. The browser keeps the token only in that tab's session storage. Sign out to clear it.
 
 For a headless Pi, forward the local UI through SSH, then open the same URL on your laptop:
 
@@ -107,7 +107,7 @@ For migration, an explicitly configured `mqtt_base_topic` wins over `car`. With 
 
 ## Configuration and local API
 
-See [example.settings.toml](src/example.settings.toml) for all supported service options. Files can be TOML or JSON. `--config` selects a file; otherwise local `settings.toml` and the standard `/etc/g86-car-telemetry/can-to-mqtt.toml` paths are checked. Explicit `CAN2MQTT_*` environment overrides include `CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`, and `HTTP_PORT`.
+See [example.settings.toml](src/example.settings.toml) for all supported service options. Files can be TOML or JSON. `--config` selects a file; otherwise local `settings.toml` and the standard `/etc/can-to-mqtt/settings.toml` path (legacy `/etc/g86-car-telemetry/can-to-mqtt.toml` remains supported) are checked. Explicit `CAN2MQTT_*` environment overrides include `CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`, and `HTTP_PORT`.
 
 The local token-protected API provides `GET /api/v1/config` (redacted), `GET /api/v1/status`, `GET /api/v1/discovery`, `GET /api/v1/channels` and `POST /api/v1/config` (draft only). Mutations require `X-Bridge-Action: configure` (`X-G86-Action` remains accepted for existing clients); browser origins must match the loopback host. Bodies are bounded to 64 KiB. Static UI assets are embedded, with no CDN, inline script, analytics, or external network dependency.
 
