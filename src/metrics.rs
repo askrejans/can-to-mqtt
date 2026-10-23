@@ -19,6 +19,7 @@ pub struct HealthStatus {
     pub uptime_seconds: u64,
     pub last_can_frame_seconds_ago: Option<u64>,
     pub last_mqtt_publish_seconds_ago: Option<u64>,
+    pub last_telemetry_seconds_ago: Option<u64>,
 }
 
 /// Shared health state
@@ -28,6 +29,7 @@ pub struct HealthState {
     pub mqtt_connected: Arc<RwLock<bool>>,
     pub last_can_frame: Arc<RwLock<Option<SystemTime>>>,
     pub last_mqtt_publish: Arc<RwLock<Option<SystemTime>>>,
+    pub last_telemetry: Arc<RwLock<Option<SystemTime>>>,
 }
 
 impl Default for HealthState {
@@ -44,17 +46,14 @@ impl HealthState {
             mqtt_connected: Arc::new(RwLock::new(false)),
             last_can_frame: Arc::new(RwLock::new(None)),
             last_mqtt_publish: Arc::new(RwLock::new(None)),
+            last_telemetry: Arc::new(RwLock::new(None)),
         }
     }
 
     pub async fn get_health(&self) -> HealthStatus {
         let can_connected = *self.can_connected.read().await;
         let mqtt_connected = *self.mqtt_connected.read().await;
-        let uptime = self
-            .start_time
-            .elapsed()
-            .unwrap_or_default()
-            .as_secs();
+        let uptime = self.start_time.elapsed().unwrap_or_default().as_secs();
 
         let last_can_frame_seconds_ago = match *self.last_can_frame.read().await {
             Some(time) => time.elapsed().ok().map(|d| d.as_secs()),
@@ -66,7 +65,17 @@ impl HealthState {
             None => None,
         };
 
-        let status = if can_connected && mqtt_connected {
+        let last_telemetry_seconds_ago = self
+            .last_telemetry
+            .read()
+            .await
+            .and_then(|at| at.elapsed().ok())
+            .map(|age| age.as_secs());
+        let telemetry_fresh = self.last_telemetry.read().await.is_some_and(|at| {
+            at.elapsed()
+                .is_ok_and(|age| age <= std::time::Duration::from_secs(2))
+        });
+        let status = if can_connected && mqtt_connected && telemetry_fresh {
             "healthy".to_string()
         } else {
             "degraded".to_string()
@@ -79,24 +88,19 @@ impl HealthState {
             uptime_seconds: uptime,
             last_can_frame_seconds_ago,
             last_mqtt_publish_seconds_ago,
+            last_telemetry_seconds_ago,
         }
     }
 }
 
 /// Initialize Prometheus metrics registry
 pub fn init_metrics() {
-    describe_counter!(
-        "can_frames_sent_total",
-        "Total number of CAN frames sent"
-    );
+    describe_counter!("can_frames_sent_total", "Total number of CAN frames sent");
     describe_counter!(
         "can_frames_received_total",
         "Total number of CAN frames received"
     );
-    describe_counter!(
-        "can_errors_total",
-        "Total number of CAN bus errors"
-    );
+    describe_counter!("can_errors_total", "Total number of CAN bus errors");
     describe_counter!(
         "mqtt_publishes_total",
         "Total number of MQTT messages published"
@@ -109,10 +113,7 @@ pub fn init_metrics() {
         "mqtt_reconnections_total",
         "Total number of MQTT reconnection attempts"
     );
-    describe_counter!(
-        "obd_requests_total",
-        "Total number of OBD-II requests sent"
-    );
+    describe_counter!("obd_requests_total", "Total number of OBD-II requests sent");
     describe_counter!(
         "obd_responses_total",
         "Total number of OBD-II responses received"
@@ -226,7 +227,7 @@ pub async fn start_metrics_server(
 
     init_metrics();
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = TcpListener::bind(addr).await?;
     info!("Metrics server listening on http://{}", addr);
 
@@ -281,7 +282,7 @@ pub async fn start_metrics_server(
                             }
                             "/ready" => {
                                 let health = health_state.get_health().await;
-                                let status = if health.can_connected && health.mqtt_connected {
+                                let status = if health.status == "healthy" {
                                     StatusCode::OK
                                 } else {
                                     StatusCode::SERVICE_UNAVAILABLE

@@ -1,6 +1,9 @@
+#[cfg(target_os = "linux")]
 use crate::vehicle::data::VehicleData;
+#[cfg(target_os = "linux")]
 use socketcan::{CanDataFrame, embedded_can::Frame};
 
+#[cfg(target_os = "linux")]
 pub fn parse_obd_response(frame: &CanDataFrame, data: &mut VehicleData) {
     let bytes = frame.data();
     if bytes.len() >= 4 {

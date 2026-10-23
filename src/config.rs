@@ -1,448 +1,454 @@
-use config::{Config, File};
 use crate::error::{ConfigError, ConfigResult};
-use tracing::{warn, info};
+use crate::passive::PassiveSignal;
+use config::{Config, File};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use std::path::{Path, PathBuf};
+use tracing::{info, warn};
 
-/// Base topic used when neither `mqtt_base_topic` nor `car` is configured
-/// (unchanged since 0.2 so existing installs keep their topics).
 pub const LEGACY_BASE_TOPIC: &str = "/GOLF86/ECU/";
-
-/// Valid car slug: `^[a-z0-9][a-z0-9-]{0,31}$` (G86 contract).
 pub fn valid_car(car: &str) -> bool {
-    let bytes = car.as_bytes();
-    !bytes.is_empty()
-        && bytes.len() <= 32
-        && bytes[0] != b'-'
-        && bytes.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'-')
+    !car.is_empty()
+        && car.len() <= 32
+        && !car.starts_with('-')
+        && car
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
-
-/// Struct to hold the application configuration.
-#[derive(Debug, Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct AppConfig {
-    /// The name of the CAN interface (e.g., "can0").
     pub can_interface: String,
-
-    /// The MQTT broker host address.
+    pub mode: String,
+    pub can_format: String,
+    pub obd_response_id: Option<u32>,
+    pub passive_profile: String,
+    pub passive_signals: Vec<PassiveSignal>,
     pub mqtt_host: String,
-
-    /// The MQTT broker port number.
     pub mqtt_port: u16,
-
-    /// The base topic of MQTT where data is pushed (resolved, see `resolve_base_topic`)
     pub mqtt_base_topic: String,
-
-    /// Car slug for the G86 namespace: base topic `/g86/<car>/obd` unless
-    /// `mqtt_base_topic` is set explicitly.
     pub car: Option<String>,
-
-    /// True when `mqtt_base_topic` came from the file or the environment.
+    #[serde(skip)]
     pub mqtt_base_topic_explicit: bool,
-
-    /// Optional MQTT username for authentication
     pub mqtt_username: Option<String>,
-
-    /// Optional MQTT password for authentication
     pub mqtt_password: Option<String>,
-
-    /// Optional MQTT client ID (defaults to auto-generated)
+    pub mqtt_password_file: Option<String>,
     pub mqtt_client_id: Option<String>,
-
-    /// MQTT keep-alive interval in seconds
+    pub mqtt_tls: bool,
+    pub mqtt_ca_file: Option<String>,
     pub mqtt_keep_alive_secs: u64,
-
-    /// MQTT quality of service (0, 1, or 2)
     pub mqtt_qos: i32,
-
-    /// High-frequency polling interval in milliseconds
+    pub legacy_scalar_output: bool,
     pub poll_interval_high_freq_ms: u64,
-
-    /// Regular polling interval in milliseconds
     pub poll_interval_regular_ms: u64,
-
-    /// Logging level (trace, debug, info, warn, error)
     pub log_level: String,
-
-    /// Enable Prometheus metrics export
     pub prometheus_enabled: bool,
-
-    /// Prometheus metrics HTTP server port
     pub prometheus_port: u16,
-
-    /// List of enabled PIDs (empty means all enabled)
     pub enabled_pids: Vec<u8>,
-
-    /// Disable terminal display output
     pub no_display: bool,
+    pub http_enabled: bool,
+    pub http_bind: String,
+    pub http_port: u16,
+    pub http_token: Option<String>,
+    pub http_token_file: String,
+    pub config_draft_path: String,
 }
-
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            can_interface: "can0".to_string(),
-            mqtt_host: "localhost".to_string(),
+            can_interface: "can0".into(),
+            mode: "obd".into(),
+            can_format: "auto".into(),
+            obd_response_id: None,
+            passive_profile: "can".into(),
+            passive_signals: vec![],
+            mqtt_host: "localhost".into(),
             mqtt_port: 1883,
-            mqtt_base_topic: LEGACY_BASE_TOPIC.to_string(),
+            mqtt_base_topic: LEGACY_BASE_TOPIC.into(),
             car: None,
             mqtt_base_topic_explicit: false,
             mqtt_username: None,
             mqtt_password: None,
+            mqtt_password_file: None,
             mqtt_client_id: None,
+            mqtt_tls: false,
+            mqtt_ca_file: None,
             mqtt_keep_alive_secs: 60,
             mqtt_qos: 0,
+            legacy_scalar_output: true,
             poll_interval_high_freq_ms: 20,
             poll_interval_regular_ms: 200,
-            log_level: "info".to_string(),
+            log_level: "info".into(),
             prometheus_enabled: true,
             prometheus_port: 9090,
-            enabled_pids: Vec::new(),
+            enabled_pids: vec![],
             no_display: false,
+            http_enabled: true,
+            http_bind: "127.0.0.1".into(),
+            http_port: 9093,
+            http_token: None,
+            http_token_file: private_dir()
+                .join("http-9093.token")
+                .to_string_lossy()
+                .into(),
+            config_draft_path: private_dir()
+                .join("draft-9093.json")
+                .to_string_lossy()
+                .into(),
         }
     }
 }
-
+impl std::fmt::Debug for AppConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.redacted().fmt(f)
+    }
+}
 impl AppConfig {
-    /// Validate the configuration
+    pub fn redacted(&self) -> Value {
+        let mut value = serde_json::to_value(self).unwrap_or_else(|_| json!({}));
+        if let Some(obj) = value.as_object_mut() {
+            for key in ["mqtt_password", "http_token"] {
+                obj.insert(
+                    key.into(),
+                    json!(if obj.get(key).is_some_and(|v| !v.is_null()) {
+                        Some("<redacted>")
+                    } else {
+                        None
+                    }),
+                );
+            }
+        };
+        value
+    }
     pub fn validate(&self) -> ConfigResult<()> {
-        // Validate MQTT port
-        if self.mqtt_port == 0 {
-            return Err(ConfigError::InvalidValue {
-                field: "mqtt_port".to_string(),
-                reason: "Port must be between 1 and 65535".to_string(),
-            });
+        let bad = |field: &str, reason: &str| ConfigError::InvalidValue {
+            field: field.into(),
+            reason: reason.into(),
+        };
+        if self.mqtt_port == 0
+            || self.mqtt_host.is_empty()
+            || self
+                .mqtt_host
+                .chars()
+                .any(|c| c.is_control() || "/@?#".contains(c))
+        {
+            return Err(bad(
+                "mqtt_host",
+                "Use a broker hostname or IP and a valid port, without credentials or URL paths",
+            ));
         }
-
-        // Validate MQTT host
-        if self.mqtt_host.is_empty() {
-            return Err(ConfigError::MissingField("mqtt_host".to_string()));
+        if self.can_interface.is_empty()
+            || self.can_interface.len() > 15
+            || !self
+                .can_interface
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
+            return Err(bad("can_interface", "Choose a Linux CAN interface name"));
         }
-
-        // Validate CAN interface
-        if self.can_interface.is_empty() {
-            return Err(ConfigError::MissingField("can_interface".to_string()));
-        }
-
         if let Some(car) = &self.car
             && !valid_car(car)
         {
-            return Err(ConfigError::InvalidValue {
-                field: "car".to_string(),
-                reason: "Use 1-32 lower-case letters, digits or hyphens, not starting with a hyphen".to_string(),
-            });
+            return Err(bad("car", "Use 1–32 lowercase letters, digits or hyphens"));
         }
-
-        if self.mqtt_base_topic.trim_matches('/').is_empty() || self.mqtt_base_topic.contains(['#', '+']) {
-            return Err(ConfigError::InvalidValue {
-                field: "mqtt_base_topic".to_string(),
-                reason: "Must be a non-empty topic without wildcards".to_string(),
-            });
+        if !["obd", "passive"].contains(&self.mode.as_str())
+            || !["auto", "standard", "extended"].contains(&self.can_format.as_str())
+        {
+            return Err(bad(
+                "mode",
+                "Choose OBD polling or passive capture and a valid CAN format",
+            ));
         }
-
-        // Validate MQTT QoS
-        if self.mqtt_qos < 0 || self.mqtt_qos > 2 {
-            return Err(ConfigError::InvalidValue {
-                field: "mqtt_qos".to_string(),
-                reason: "QoS must be 0, 1, or 2".to_string(),
-            });
+        if self.obd_response_id.is_some_and(|id| id > 0x1FFF_FFFF) {
+            return Err(bad("obd_response_id", "CAN ID exceeds 29 bits"));
         }
-
-        // Validate log level
-        let valid_levels = ["trace", "debug", "info", "warn", "error"];
-        if !valid_levels.contains(&self.log_level.to_lowercase().as_str()) {
-            return Err(ConfigError::InvalidValue {
-                field: "log_level".to_string(),
-                reason: format!("Must be one of: {}", valid_levels.join(", ")),
-            });
+        if (!valid_car(&self.passive_profile) && self.passive_profile != "obd_mode01")
+            || self.passive_signals.len() > 64
+        {
+            return Err(bad(
+                "passive_profile",
+                "Choose a short profile ID and at most 64 signals",
+            ));
         }
-
-        // Validate polling intervals
-        if self.poll_interval_high_freq_ms == 0 {
-            return Err(ConfigError::InvalidValue {
-                field: "poll_interval_high_freq_ms".to_string(),
-                reason: "Must be greater than 0".to_string(),
-            });
+        if self.mode == "passive"
+            && self.passive_profile == "obd_mode01"
+            && self.obd_response_id.is_none()
+        {
+            return Err(bad(
+                "obd_response_id",
+                "Bind one observed ECU response ID for passive OBD observation",
+            ));
         }
-
-        if self.poll_interval_regular_ms == 0 {
-            return Err(ConfigError::InvalidValue {
-                field: "poll_interval_regular_ms".to_string(),
-                reason: "Must be greater than 0".to_string(),
-            });
+        let mut names = std::collections::HashSet::new();
+        for signal in &self.passive_signals {
+            if !names.insert(&signal.channel) {
+                return Err(bad(
+                    "passive_signals",
+                    "Each profile must define a channel only once",
+                ));
+            }
+            signal.validate().map_err(|e| bad("passive_signals", &e))?
         }
-
-        // Validate Prometheus port
+        if self.mqtt_base_topic.trim_matches('/').is_empty()
+            || self.mqtt_base_topic.len() > 512
+            || self
+                .mqtt_base_topic
+                .chars()
+                .any(|c| c.is_control() || "+#".contains(c))
+        {
+            return Err(bad(
+                "mqtt_base_topic",
+                "Use a nonempty topic prefix without wildcards",
+            ));
+        }
+        if !(0..=2).contains(&self.mqtt_qos)
+            || self.poll_interval_high_freq_ms < 10
+            || self.poll_interval_regular_ms < self.poll_interval_high_freq_ms
+            || self.poll_interval_regular_ms > 60_000
+        {
+            return Err(bad(
+                "poll_interval_regular_ms",
+                "Use polling intervals of at least 10 ms; regular must be between high-frequency and 60 seconds",
+            ));
+        }
+        if !["trace", "debug", "info", "warn", "error"]
+            .contains(&self.log_level.to_lowercase().as_str())
+        {
+            return Err(bad("log_level", "Choose trace, debug, info, warn or error"));
+        }
         if self.prometheus_enabled && self.prometheus_port == 0 {
-            return Err(ConfigError::InvalidValue {
-                field: "prometheus_port".to_string(),
-                reason: "Port must be between 1 and 65535".to_string(),
-            });
+            return Err(bad("prometheus_port", "Choose a nonzero metrics port"));
         }
-
+        if self.http_enabled
+            && (self.http_port == 0
+                || !self
+                    .http_bind
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback()))
+        {
+            return Err(bad(
+                "http_bind",
+                "The native HTTP UI binds to loopback only. Use the G86 Car Computer HTTPS service for LAN access",
+            ));
+        }
+        if self
+            .http_token
+            .as_ref()
+            .is_some_and(|v| v.len() < 32 || v.len() > 256 || v.chars().any(char::is_control))
+        {
+            return Err(bad(
+                "http_token",
+                "Use a private token of 32–256 printable characters",
+            ));
+        }
+        for v in [
+            self.http_token_file.as_str(),
+            self.config_draft_path.as_str(),
+        ] {
+            if v.is_empty() || v.chars().any(char::is_control) {
+                return Err(bad("private_paths", "Choose local token and draft files"));
+            }
+        }
         Ok(())
     }
-
-    /// Apply environment variable overrides
     pub fn apply_env_overrides(&mut self) {
-        if let Ok(val) = std::env::var("CAN2MQTT_CAN_INTERFACE") {
-            info!("Overriding can_interface from environment: {}", val);
-            self.can_interface = val;
+        for (name, target) in [
+            ("CAN_INTERFACE", &mut self.can_interface),
+            ("MQTT_HOST", &mut self.mqtt_host),
+            ("MODE", &mut self.mode),
+            ("CAN_FORMAT", &mut self.can_format),
+            ("HTTP_BIND", &mut self.http_bind),
+            ("LOG_LEVEL", &mut self.log_level),
+        ] {
+            if let Ok(v) = std::env::var(format!("CAN2MQTT_{name}")) {
+                *target = v;
+            }
         }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_HOST") {
-            info!("Overriding mqtt_host from environment: {}", val);
-            self.mqtt_host = val;
+        for (name, target) in [
+            ("MQTT_USERNAME", &mut self.mqtt_username),
+            ("MQTT_PASSWORD", &mut self.mqtt_password),
+            ("MQTT_PASSWORD_FILE", &mut self.mqtt_password_file),
+            ("HTTP_TOKEN", &mut self.http_token),
+        ] {
+            if let Ok(v) = std::env::var(format!("CAN2MQTT_{name}")) {
+                *target = Some(v)
+            }
         }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_PORT")
-            && let Ok(port) = val.parse()
+        if let Ok(v) = std::env::var("CAN2MQTT_MQTT_PORT")
+            && let Ok(p) = v.parse()
         {
-            info!("Overriding mqtt_port from environment: {}", port);
-            self.mqtt_port = port;
+            self.mqtt_port = p
         }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_BASE_TOPIC") {
-            info!("Overriding mqtt_base_topic from environment: {}", val);
-            self.mqtt_base_topic = val;
-            self.mqtt_base_topic_explicit = true;
+        if let Ok(v) = std::env::var("CAN2MQTT_HTTP_PORT")
+            && let Ok(p) = v.parse()
+        {
+            self.http_port = p
         }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_CAR") {
-            info!("Overriding car from environment: {}", val);
-            self.car = Some(val);
+        if let Ok(v) = std::env::var("CAN2MQTT_MQTT_BASE_TOPIC") {
+            self.mqtt_base_topic = v;
+            self.mqtt_base_topic_explicit = true
         }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_USERNAME") {
-            info!("Overriding mqtt_username from environment");
-            self.mqtt_username = Some(val);
-        }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_MQTT_PASSWORD") {
-            info!("MQTT password provided from environment");
-            self.mqtt_password = Some(val);
-        }
-
-        if let Ok(val) = std::env::var("CAN2MQTT_LOG_LEVEL") {
-            info!("Overriding log_level from environment: {}", val);
-            self.log_level = val;
+        if let Ok(v) = std::env::var("CAN2MQTT_CAR") {
+            self.car = Some(v)
         }
     }
-}
-
-impl AppConfig {
-    /// Resolve the base topic: an explicit `mqtt_base_topic` wins, then
-    /// `/g86/<car>/obd` when `car` is set, else the legacy default.
     pub fn resolve_base_topic(&mut self) {
-        if self.mqtt_base_topic_explicit {
-            info!("MQTT base topic: {} (configured)", self.mqtt_base_topic);
-        } else if let Some(car) = &self.car {
-            self.mqtt_base_topic = format!("/g86/{car}/obd");
-            info!("MQTT base topic: {} (car {})", self.mqtt_base_topic, car);
-        } else {
-            self.mqtt_base_topic = LEGACY_BASE_TOPIC.to_string();
-            warn!(
-                "MQTT base topic: {} (legacy default; set car or mqtt_base_topic)",
-                self.mqtt_base_topic
-            );
+        if !self.mqtt_base_topic_explicit {
+            self.mqtt_base_topic = if let Some(car) = &self.car {
+                if self.mode == "passive" {
+                    format!("/g86/{car}/sensors/{}", self.passive_profile)
+                } else {
+                    format!("/g86/{car}/obd")
+                }
+            } else {
+                LEGACY_BASE_TOPIC.into()
+            }
         }
     }
-
-    /// Base topic without a trailing slash, for `<base>/telemetry`, `/status`, `/health`.
     pub fn base(&self) -> &str {
         self.mqtt_base_topic.trim_end_matches('/')
     }
 }
-
-/// Load application configuration from a TOML file.
-///
-/// This function reads the configuration settings from a TOML file.
-///
-/// # Arguments
-/// - `config_path`: An optional path to the configuration file.
-///
-/// # Returns
-/// Returns a `Result` containing either the `AppConfig` struct with the loaded configuration or an error message.
-pub fn load_configuration(config_path: Option<&str>) -> ConfigResult<AppConfig> {
-    let settings = if let Some(path) = config_path {
-        load_from_path(path)?
+pub fn load_configuration(path: Option<&str>) -> ConfigResult<AppConfig> {
+    let selected = path
+        .map(PathBuf::from)
+        .or_else(|| default_paths().into_iter().find(|p| p.is_file()));
+    let settings = if let Some(path) = &selected {
+        info!(path=%path.display(),"Loading CAN configuration");
+        Config::builder()
+            .add_source(File::from(path.as_path()))
+            .build()?
     } else {
-        load_default_paths()?
+        warn!("No configuration file found; using defaults");
+        Config::default()
     };
-
-    let mut config = AppConfig {
-        can_interface: settings
-            .get_string("can_interface")
-            .unwrap_or_else(|_| {
-                warn!("can_interface not found in config, using default: can0");
-                "can0".to_string()
-            }),
-        mqtt_host: settings
-            .get_string("mqtt_host")
-            .unwrap_or_else(|_| {
-                warn!("mqtt_host not found in config, using default: localhost");
-                "localhost".to_string()
-            }),
-        mqtt_port: settings
-            .get_int("mqtt_port")
-            .unwrap_or_else(|_| {
-                warn!("mqtt_port not found in config, using default: 1883");
-                1883
-            }) as u16,
-        mqtt_base_topic: settings
-            .get_string("mqtt_base_topic")
-            .unwrap_or_else(|_| LEGACY_BASE_TOPIC.to_string()),
-        car: settings.get_string("car").ok(),
-        mqtt_base_topic_explicit: settings.get_string("mqtt_base_topic").is_ok(),
-        mqtt_username: settings.get_string("mqtt_username").ok(),
-        mqtt_password: settings.get_string("mqtt_password").ok(),
-        mqtt_client_id: settings.get_string("mqtt_client_id").ok(),
-        mqtt_keep_alive_secs: settings
-            .get_int("mqtt_keep_alive_secs")
-            .unwrap_or(60) as u64,
-        mqtt_qos: settings.get_int("mqtt_qos").unwrap_or(0) as i32,
-        poll_interval_high_freq_ms: settings
-            .get_int("poll_interval_high_freq_ms")
-            .unwrap_or(20) as u64,
-        poll_interval_regular_ms: settings
-            .get_int("poll_interval_regular_ms")
-            .unwrap_or(200) as u64,
-        log_level: settings
-            .get_string("log_level")
-            .unwrap_or_else(|_| "info".to_string()),
-        prometheus_enabled: settings
-            .get_bool("prometheus_enabled")
-            .unwrap_or(true),
-        prometheus_port: settings
-            .get_int("prometheus_port")
-            .unwrap_or(9090) as u16,
-        enabled_pids: settings
-            .get_array("enabled_pids")
-            .ok()
-            .map(|arr| {
-                arr.into_iter()
-                    .filter_map(|v| v.into_int().ok().map(|i| i as u8))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        no_display: settings.get_bool("no_display").unwrap_or(false),
-    };
-
-    // Apply environment variable overrides
-    config.apply_env_overrides();
-    config.resolve_base_topic();
-
-    // Validate configuration
-    config.validate()?;
-
-    Ok(config)
+    let explicit = settings.get_string("mqtt_base_topic").is_ok();
+    let mut cfg: AppConfig = settings.clone().try_deserialize()?;
+    cfg.mqtt_base_topic_explicit = explicit;
+    cfg.apply_env_overrides();
+    cfg.resolve_base_topic();
+    if let Some(path) = &cfg.mqtt_password_file {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        let file = std::fs::File::open(path).map_err(|_| ConfigError::InvalidValue {
+            field: "mqtt_password_file".into(),
+            reason: "Could not read the private broker password file".into(),
+        })?;
+        file.take(4097).read_to_end(&mut bytes).map_err(|_| {
+            ConfigError::ValidationFailed("Could not read the private broker password file".into())
+        })?;
+        if bytes.len() > 4096 {
+            return Err(ConfigError::ValidationFailed(
+                "Broker password file is too large".into(),
+            ));
+        };
+        cfg.mqtt_password = Some(
+            String::from_utf8(bytes)
+                .map_err(|_| ConfigError::ValidationFailed("Broker password is not UTF-8".into()))?
+                .trim_end_matches(['\r', '\n'])
+                .into(),
+        )
+    }
+    if settings.get_string("http_token_file").is_err() {
+        cfg.http_token_file = private_dir()
+            .join(format!("http-{}.token", cfg.http_port))
+            .to_string_lossy()
+            .into();
+    }
+    if settings.get_string("config_draft_path").is_err() {
+        cfg.config_draft_path = private_dir()
+            .join(format!("draft-{}.json", cfg.http_port))
+            .to_string_lossy()
+            .into();
+    }
+    cfg.validate()?;
+    Ok(cfg)
 }
-
-/// Loads the configuration from the specified path.
-///
-/// This function attempts to load the configuration from the given file path.
-/// If the file is successfully loaded, the configuration is returned.
-/// If there is an error loading the file, an error message is returned.
-///
-/// # Arguments
-///
-/// * `path` - A string slice that holds the path to the configuration file.
-///
-/// # Returns
-///
-/// * `Ok(Config)` - If the configuration file is successfully loaded.
-/// * `Err(ConfigError)` - If there is an error loading the configuration file.
-fn load_from_path(path: &str) -> ConfigResult<Config> {
-    Config::builder()
-        .add_source(File::with_name(path))
-        .build()
-        .map_err(|err| ConfigError::ParseError(err.to_string()))
-}
-
-/// Attempts to load the configuration from default paths.
-///
-/// This function tries to load the configuration from the following locations in order:
-/// 1. A `settings.toml` file located in the same directory as the executable.
-/// 2. A `can-to-mqtt.toml` file located at `/usr/etc/g86-car-telemetry/`.
-/// 3. A `can-to-mqtt.toml` file located at `/etc/g86-car-telemetry/`.
-///
-/// If a configuration file is successfully loaded from any of these locations, it will be used.
-/// If none of the files are found or successfully loaded, the default configuration will be returned.
-///
-/// # Returns
-///
-/// * `Ok(Config)` - If a configuration file is successfully loaded from any of the default paths.
-/// * `Err(ConfigError)` - If there is an error loading the configuration from all default paths.
-fn load_default_paths() -> ConfigResult<Config> {
+fn default_paths() -> Vec<PathBuf> {
+    let mut paths = vec![Path::new("settings.toml").into()];
     if let Ok(exe) = std::env::current_exe()
-        && let Some(exe_dir) = exe.parent()
+        && let Some(parent) = exe.parent()
     {
-        let default_path = exe_dir.join("settings.toml");
-        if let Some(path_str) = default_path.to_str()
-            && let Ok(config) = Config::builder()
-                .add_source(File::with_name(path_str))
-                .build()
-        {
-            info!("Loaded configuration from: {}", default_path.display());
-            return Ok(config);
-        }
+        paths.push(parent.join("settings.toml"))
     }
+    paths.extend([
+        "/usr/etc/g86-car-telemetry/can-to-mqtt.toml".into(),
+        "/etc/g86-car-telemetry/can-to-mqtt.toml".into(),
+    ]);
+    paths
+}
 
-    if let Ok(config) = Config::builder()
-        .add_source(File::with_name(
-            "/usr/etc/g86-car-telemetry/can-to-mqtt.toml",
-        ))
-        .build()
-    {
-        info!("Loaded configuration from: /usr/etc/g86-car-telemetry/can-to-mqtt.toml");
-        return Ok(config);
-    }
-
-    if let Ok(config) = Config::builder()
-        .add_source(File::with_name("/etc/g86-car-telemetry/can-to-mqtt.toml"))
-        .build()
-    {
-        info!("Loaded configuration from: /etc/g86-car-telemetry/can-to-mqtt.toml");
-        return Ok(config);
-    }
-
-    warn!("No configuration file found, using defaults");
-    Ok(Config::default())
+fn private_dir() -> PathBuf {
+    std::env::var_os("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir)
+                .join(".config")
+        })
+        .join("g86-can-to-mqtt")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
     fn load(text: &str) -> ConfigResult<AppConfig> {
-        let dir = std::env::temp_dir().join(format!("can2mqtt-{}-{}", std::process::id(), text.len()));
+        let mut random = [0u8; 8];
+        getrandom::fill(&mut random).unwrap();
+        let dir = std::env::temp_dir().join(format!("g86-can-{:x}", u64::from_ne_bytes(random)));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("settings.toml");
         std::fs::write(&path, text).unwrap();
         let result = load_configuration(path.to_str());
-        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
         result
     }
-
     #[test]
-    fn base_topic_resolution_keeps_legacy_installs() {
-        // Nothing set: legacy default, unchanged.
-        assert_eq!(load("can_interface = \"can0\"\n").unwrap().mqtt_base_topic, LEGACY_BASE_TOPIC);
-        // Car set: G86 namespace.
-        let c = load("car = \"qa-car\"\n").unwrap();
-        assert_eq!(c.mqtt_base_topic, "/g86/qa-car/obd");
-        assert_eq!(c.base(), "/g86/qa-car/obd");
-        // Explicit base topic wins over car.
-        let c = load("car = \"qa-car\"\nmqtt_base_topic = \"/CAR/OBD/\"\n").unwrap();
-        assert_eq!(c.mqtt_base_topic, "/CAR/OBD/");
-        assert_eq!(c.base(), "/CAR/OBD");
+    fn preserves_legacy_and_explicit_topic_precedence() {
+        assert_eq!(
+            load("can_interface='can0'").unwrap().mqtt_base_topic,
+            LEGACY_BASE_TOPIC
+        );
+        assert_eq!(load("car='qa-car'").unwrap().base(), "/g86/qa-car/obd");
+        assert_eq!(
+            load("car='qa-car'\nmqtt_base_topic='/legacy/'")
+                .unwrap()
+                .base(),
+            "/legacy"
+        );
+        assert_eq!(
+            load("car='qa-car'\nmode='passive'").unwrap().base(),
+            "/g86/qa-car/sensors/can"
+        );
     }
-
     #[test]
-    fn car_slug_is_validated() {
-        for bad in ["Golf86", "-car", "car_86", "", "a234567890123456789012345678901234"] {
-            assert!(!valid_car(bad), "{bad}");
+    fn validates_privacy_and_typed_bounds_before_starting() {
+        for text in [
+            "car='Bad Name'",
+            "mqtt_port=70000",
+            "mqtt_port=-1",
+            "can_interface='can0; bad'",
+            "poll_interval_regular_ms=0",
+            "poll_interval_regular_ms=10\npoll_interval_high_freq_ms=20",
+            "http_bind='0.0.0.0'",
+            "mode='passive'\npassive_profile='obd_mode01'",
+            "mqtt_host='user:secret@host'",
+        ] {
+            assert!(load(text).is_err(), "{text}")
         }
-        for good in ["golf86", "qa-car", "0", "a2345678901234567890123456789012"] {
-            assert!(valid_car(good), "{good}");
-        }
-        assert!(load("car = \"Golf 86\"\n").is_err());
-        assert!(load("mqtt_base_topic = \"/a/#\"\n").is_err());
+    }
+    #[test]
+    fn secrets_are_redacted_even_in_debug() {
+        let c = AppConfig {
+            mqtt_password: Some("test-password-never-in-debug".into()),
+            http_token: Some("test-token-never-in-debug-aaaaaaaaaaaa".into()),
+            ..AppConfig::default()
+        };
+        let debug = format!("{c:?}");
+        assert!(!debug.contains("test-password"));
+        assert!(!debug.contains("test-token"));
+        assert_eq!(c.redacted()["mqtt_password"], "<redacted>");
     }
 }

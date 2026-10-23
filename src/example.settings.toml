@@ -1,41 +1,39 @@
-# CAN-to-MQTT Bridge Configuration Example
-# Copy this file to settings.toml and adjust values as needed
-
-# CAN Interface Configuration
+# Standalone Linux SocketCAN example. Keep the real file private if it holds credentials.
 can_interface = "can0"
-
-# MQTT Broker Configuration
-mqtt_host = "localhost"
-mqtt_port = 1883
-# Topic namespace. Set `car` for the G86 car computer layout
-# (/g86/<car>/obd/telemetry, /status, /health). An explicit mqtt_base_topic
-# wins over `car`; with neither, the legacy default /GOLF86/ECU/ is used.
-car = "golf86"
-# mqtt_base_topic = "/GOLF86/ECU/"
-
-# MQTT Authentication (optional)
-# mqtt_username = "your_username"
-# mqtt_password = "your_password"
-# mqtt_client_id = "can-to-mqtt-unique-id"
-
-# MQTT Connection Settings
-mqtt_keep_alive_secs = 60
-mqtt_qos = 0  # 0, 1, or 2
-
-# Polling Intervals (milliseconds)
-poll_interval_high_freq_ms = 20    # High-priority PIDs (RPM, speed, etc.)
-poll_interval_regular_ms = 200     # Regular PIDs
-
-# Logging Configuration
-log_level = "info"  # trace, debug, info, warn, error
-
-# Prometheus Metrics
-prometheus_enabled = true
-prometheus_port = 9090
-
-# Display Configuration
-no_display = false
-
-# Enabled PIDs (empty list means all PIDs enabled)
-# enabled_pids = [0x0C, 0x0D, 0x04, 0x05]  # Example: only RPM, speed, load, coolant temp
+mode = "obd"                      # obd = Mode 01 reads; passive = zero CAN transmissions
+can_format = "auto"               # auto / standard (11-bit) / extended (29-bit)
+# obd_response_id = 2024           # Optional selected response CAN ID, decimal 0x7E8
+# Only implemented PIDs advertised by the bound ECU are polled. Empty = all available.
 enabled_pids = []
+poll_interval_high_freq_ms = 20    # One request per tick; fast PID group round-robin
+poll_interval_regular_ms = 200
+
+car = "rally-86"                  # /g86/rally-86/obd (passive: /sensors/<profile>)
+# mqtt_base_topic = "/custom/can"  # Explicit override wins; omit to use car scope
+mqtt_host = "127.0.0.1"
+mqtt_port = 1883
+# mqtt_username = "can-rally-86"
+# mqtt_password_file = "/private/path/broker-password"
+# mqtt_password = ""             # Prefer the private file; never put secrets in Git
+# mqtt_client_id = "can-rally-86"
+mqtt_tls = false                  # true for a remote TLS broker
+# mqtt_ca_file = "/private/path/broker-ca.pem"
+mqtt_keep_alive_secs = 60
+mqtt_qos = 0                      # Legacy setting; canonical live telemetry always QoS 0
+legacy_scalar_output = false      # true keeps fresh legacy scalar topics during migration
+
+# Passive mode: see docs/PASSIVE_SIGNALS.md. No default vehicle mappings are assumed.
+passive_profile = "can"
+passive_signals = []
+
+http_enabled = true
+http_bind = "127.0.0.1"           # Loopback only, including SSH forwarding
+http_port = 9093
+# The service creates a random token file (owner-only) when not configured explicitly.
+# http_token_file = "/private/path/http-9093.token"
+# config_draft_path = "/private/path/draft-9093.json"
+# http_token = ""                 # Optional >=32-character secret; never commit a value
+prometheus_enabled = true
+prometheus_port = 9090            # Metrics and health bind to loopback
+log_level = "info"
+no_display = true                 # Compatibility flag; current UI is the browser dashboard

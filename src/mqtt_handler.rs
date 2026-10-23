@@ -1,10 +1,10 @@
-use tracing::{debug, error, info, warn};
+use crate::config::AppConfig;
+use crate::error::{MqttError, MqttResult};
 use paho_mqtt as mqtt;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
-use crate::config::AppConfig;
-use crate::error::{MqttError, MqttResult};
+use tracing::{debug, error, info, warn};
 
 lazy_static::lazy_static! {
     static ref LAST_VALUES: Mutex<HashMap<String, (String, SystemTime)>> = Mutex::new(HashMap::new());
@@ -15,7 +15,10 @@ pub fn cleanup_old_values() {
     if let Ok(mut last_values) = LAST_VALUES.lock() {
         let cutoff = SystemTime::now() - Duration::from_secs(3600); // 1 hour
         last_values.retain(|_, (_, timestamp)| *timestamp > cutoff);
-        debug!("Cleaned up LAST_VALUES cache, current size: {}", last_values.len());
+        debug!(
+            "Cleaned up LAST_VALUES cache, current size: {}",
+            last_values.len()
+        );
     }
 }
 
@@ -34,14 +37,20 @@ pub fn cleanup_old_values() {
 /// or an MqttError if setup or connection fails.
 pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
     // Format the MQTT broker host and port.
-    let host = format!("mqtt://{}:{}", config.mqtt_host, config.mqtt_port);
+    let host = format!(
+        "{}://{}:{}",
+        if config.mqtt_tls { "ssl" } else { "mqtt" },
+        config.mqtt_host,
+        config.mqtt_port
+    );
 
     info!("Creating MQTT client for broker: {}", host);
 
     // Create client ID (use configured one or generate)
-    let client_id = config.mqtt_client_id.clone().unwrap_or_else(|| {
-        format!("can-to-mqtt-{}", std::process::id())
-    });
+    let client_id = config
+        .mqtt_client_id
+        .clone()
+        .unwrap_or_else(|| format!("can-to-mqtt-{}", std::process::id()));
 
     // Build create options
     let create_opts = mqtt::CreateOptionsBuilder::new()
@@ -50,8 +59,8 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
         .finalize();
 
     // Create an MQTT client.
-    let mut cli = mqtt::Client::new(create_opts)
-        .map_err(|e| MqttError::ClientCreation(e.to_string()))?;
+    let mut cli =
+        mqtt::Client::new(create_opts).map_err(|e| MqttError::ClientCreation(e.to_string()))?;
 
     // Set a timeout for synchronous calls.
     cli.set_timeout(Duration::from_secs(5));
@@ -63,16 +72,30 @@ pub fn setup_mqtt(config: &AppConfig) -> MqttResult<mqtt::Client> {
         .clean_session(false)
         .automatic_reconnect(Duration::from_secs(1), Duration::from_secs(60))
         // Availability (Home Assistant / G86 car computer): retained, LWT `offline`.
-        .will_message(mqtt::Message::new_retained(status_topic(config), "offline", 1));
+        .will_message(mqtt::Message::new_retained(
+            status_topic(config),
+            "offline",
+            1,
+        ));
 
     // Add authentication if configured
     if let Some(ref username) = config.mqtt_username {
         conn_opts_builder.user_name(username);
         if let Some(ref password) = config.mqtt_password {
-            conn_opts_builder.password(password);
+            conn_opts_builder.password(password.as_bytes());
         }
     }
 
+    if config.mqtt_tls {
+        let mut ssl = mqtt::SslOptionsBuilder::new();
+        ssl.enable_server_cert_auth(true).verify(true);
+        if let Some(path) = &config.mqtt_ca_file {
+            ssl.trust_store(path).map_err(|_| {
+                MqttError::InvalidConfig("Could not load the broker CA certificate".into())
+            })?;
+        }
+        conn_opts_builder.ssl_options(ssl.finalize());
+    }
     let conn_opts = conn_opts_builder.finalize();
 
     // Attempt to connect to the MQTT broker
@@ -95,7 +118,11 @@ pub fn status_topic(config: &AppConfig) -> String {
 /// Publish `online`/`offline` (retained). Re-sent with every health message so
 /// a broker that delivered the LWT during a reconnect is corrected.
 pub fn publish_status(cli: &mqtt::Client, config: &AppConfig, online: bool) {
-    let message = mqtt::Message::new_retained(status_topic(config), if online { "online" } else { "offline" }, 1);
+    let message = mqtt::Message::new_retained(
+        status_topic(config),
+        if online { "online" } else { "offline" },
+        1,
+    );
     if let Err(e) = cli.publish(message) {
         warn!("Status publish failed: {}", e);
     }
@@ -105,13 +132,13 @@ pub fn publish_status(cli: &mqtt::Client, config: &AppConfig, online: bool) {
 pub async fn reconnect_mqtt(client: &mqtt::Client, _config: &AppConfig) -> MqttResult<()> {
     let mut attempt = 0;
     let max_attempts = 10;
-    
+
     while attempt < max_attempts {
         attempt += 1;
         let delay = std::cmp::min(2u64.pow(attempt), 60); // Max 60 seconds
-        
+
         warn!("MQTT reconnection attempt {} of {}", attempt, max_attempts);
-        
+
         // The paho-mqtt client has automatic reconnection built in,
         // so we just need to wait and check connection status
         match client.reconnect() {
@@ -127,7 +154,7 @@ pub async fn reconnect_mqtt(client: &mqtt::Client, _config: &AppConfig) -> MqttR
             }
         }
     }
-    
+
     Err(MqttError::Connection(format!(
         "Failed to reconnect after {} attempts",
         max_attempts
@@ -159,7 +186,9 @@ pub fn publish_if_changed(
 ) -> MqttResult<()> {
     // Validate inputs
     if topic.is_empty() || payload.is_empty() {
-        return Err(MqttError::InvalidConfig("Empty topic or payload".to_string()));
+        return Err(MqttError::InvalidConfig(
+            "Empty topic or payload".to_string(),
+        ));
     }
 
     if !(0..=2).contains(&qos) {
@@ -217,12 +246,42 @@ pub fn publish_if_changed(
 /// # Returns
 ///
 /// Returns `Result<(), MqttError>` indicating success or failure.
-pub fn publish_message(
-    cli: &mqtt::Client,
-    topic: &str,
-    payload: &str,
-    qos: i32,
-) -> MqttResult<()> {
+pub fn publish_message(cli: &mqtt::Client, topic: &str, payload: &str, qos: i32) -> MqttResult<()> {
     // For backwards compatibility, this now calls publish_if_changed
     publish_if_changed(cli, topic, payload, qos)
+}
+
+/// Compatibility scalars are emitted only for the actual fresh canonical field.
+/// The old all-fields default snapshot could advertise zeros for absent sensors.
+pub fn publish_fresh_legacy(cli: &mqtt::Client, config: &AppConfig, packet: &serde_json::Value) {
+    let now = crate::state::wall_ms();
+    let Some(stamp) = packet["timestampMs"].as_u64() else {
+        return;
+    };
+    if stamp > now.saturating_add(500) || now.saturating_sub(stamp) > 2000 {
+        return;
+    };
+    let Some(channels) = packet["channels"].as_object() else {
+        return;
+    };
+    for (name, suffix) in [
+        ("rpm", "/RPM"),
+        ("throttle", "/TPS"),
+        ("manifoldKpa", "/MAP"),
+        ("intakeC", "/MAT"),
+        ("coolantC", "/CLT"),
+        ("batteryV", "/BAT"),
+        ("baroKpa", "/BAR"),
+        ("ecuSpeedKmh", "/VSS"),
+        ("engineLoad", "/ELD"),
+        ("fuelPressureKpa", "/FPR"),
+        ("ignitionDeg", "/TAD"),
+        ("massAirFlowGps", "/MAS"),
+        ("oilC", "/OIT"),
+    ] {
+        if let Some(value) = channels.get(name) {
+            let topic = format!("{}{suffix}", config.mqtt_base_topic);
+            let _ = publish_if_changed(cli, &topic, &value.to_string(), config.mqtt_qos);
+        }
+    }
 }

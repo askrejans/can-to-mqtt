@@ -1,1 +1,6 @@
 /target
+# Local release outputs and private setup files
+/dist/
+/settings.toml
+/settings.json
+*.token

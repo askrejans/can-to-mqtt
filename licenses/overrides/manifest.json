@@ -1,0 +1,44 @@
+[
+  {
+    "crate": "valuable-0.1.1",
+    "files": [
+      {
+        "name": "LICENSE",
+        "url": "https://raw.githubusercontent.com/tokio-rs/valuable/9efc29b6e58cef28f6566a47aa7e142a55fead77/LICENSE",
+        "sha256": "ed60d479b8fd1f64e9cbc3de449a16a53ac1b3d1b6aeb9bf9d190a8e93061b44"
+      }
+    ]
+  },
+  {
+    "crate": "winapi-i686-pc-windows-gnu-0.4.0",
+    "source": "cached winapi-0.3.9 repository licence (same upstream winapi-rs licence declaration)",
+    "files": [
+      "LICENSE-APACHE",
+      "LICENSE-MIT"
+    ]
+  },
+  {
+    "crate": "winapi-x86_64-pc-windows-gnu-0.4.0",
+    "source": "cached winapi-0.3.9 repository licence (same upstream winapi-rs licence declaration)",
+    "files": [
+      "LICENSE-APACHE",
+      "LICENSE-MIT"
+    ]
+  },
+  {
+    "crate": "yaml-rust2-0.11.1",
+    "files": [
+      {
+        "name": "LICENSE-APACHE",
+        "url": "https://raw.githubusercontent.com/Ethiraric/yaml-rust2/8316be6808214d1eedb736442374ba3e49cd7c26/Apache-LICENSE",
+        "sha256": "278f0e5c23f023a2f1af8d528dd5c29dc3a5ea2dd63558aa8d4f077c09e037c7"
+      },
+      {
+        "name": "LICENSE-MIT",
+        "url": "https://raw.githubusercontent.com/Ethiraric/yaml-rust2/8316be6808214d1eedb736442374ba3e49cd7c26/MIT-LICENSE",
+        "sha256": "3dd30063cdb4a378736348c215cb84b78b0711ba7e39903162cae5ce71dc9757"
+      }
+    ],
+    "missing": true
+  }
+]

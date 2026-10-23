@@ -6,7 +6,7 @@
 //! otherwise `ok`. `timeouts` are counted but do not degrade: a car that does
 //! not support a polled PID times out on every regular cycle.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
@@ -34,7 +34,10 @@ pub struct Health {
 
 impl Health {
     pub fn new(boot_id: &str) -> Self {
-        let errors = ["canErrors", "publishErrors", "timeouts"].into_iter().map(|k| (k, 0)).collect();
+        let errors = ["canErrors", "publishErrors", "timeouts"]
+            .into_iter()
+            .map(|k| (k, 0))
+            .collect();
         Self {
             boot_id: boot_id.to_string(),
             socket_open: false,
@@ -80,7 +83,10 @@ impl Health {
     pub fn link(&self, now: Instant) -> &'static str {
         if !self.socket_open {
             "disconnected"
-        } else if self.last_reply.is_some_and(|t| now.duration_since(t) <= REPLY_TIMEOUT) {
+        } else if self
+            .last_reply
+            .is_some_and(|t| now.duration_since(t) <= REPLY_TIMEOUT)
+        {
             "connected"
         } else {
             "connecting"
@@ -90,8 +96,12 @@ impl Health {
     pub fn state(&self, now: Instant) -> &'static str {
         if self.link(now) != "connected" {
             "down"
-        } else if self.last_packet.is_none_or(|t| now.duration_since(t) > FRESH)
-            || self.last_degrading_error.is_some_and(|t| now.duration_since(t) < ERROR_WINDOW)
+        } else if self
+            .last_packet
+            .is_none_or(|t| now.duration_since(t) > FRESH)
+            || self
+                .last_degrading_error
+                .is_some_and(|t| now.duration_since(t) < ERROR_WINDOW)
         {
             "degraded"
         } else {
@@ -118,8 +128,19 @@ impl Health {
         self.json(now, wall_ms, clock_synced, "down", "disconnected")
     }
 
-    fn json(&mut self, now: Instant, wall_ms: u64, clock_synced: bool, state: &str, link: &str) -> Value {
-        while self.published.front().is_some_and(|t| now.duration_since(*t) > RATE_WINDOW) {
+    fn json(
+        &mut self,
+        now: Instant,
+        wall_ms: u64,
+        clock_synced: bool,
+        state: &str,
+        link: &str,
+    ) -> Value {
+        while self
+            .published
+            .front()
+            .is_some_and(|t| now.duration_since(*t) > RATE_WINDOW)
+        {
             self.published.pop_front();
         }
         self.channels.retain(|_, t| now.duration_since(*t) <= FRESH);
@@ -206,10 +227,18 @@ mod tests {
         for i in 0..10 {
             let t = t0 + Duration::from_millis(1_500 + i * 300);
             h.on_reply(t);
-            h.on_packet(&packet(11_000 + i * 300, if i % 2 == 0 { "rpm" } else { "throttle" }), t);
+            h.on_packet(
+                &packet(
+                    11_000 + i * 300,
+                    if i % 2 == 0 { "rpm" } else { "throttle" },
+                ),
+                t,
+            );
         }
         let now = t0 + Duration::from_millis(4_500);
-        let v = h.due(now, 13_720, true).expect("link change publishes at once");
+        let v = h
+            .due(now, 13_720, true)
+            .expect("link change publishes at once");
         assert_eq!(v["schema"], 1);
         assert_eq!(v["bridge"], "can-to-mqtt");
         assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
@@ -221,10 +250,16 @@ mod tests {
         assert_eq!(v["rateHz"], 2.0);
         assert_eq!(v["ageMs"], 13_720 - 13_700);
         assert_eq!(v["channels"], json!(["rpm", "throttle"]));
-        assert_eq!(v["errors"], json!({"canErrors": 0, "publishErrors": 0, "timeouts": 0}));
+        assert_eq!(
+            v["errors"],
+            json!({"canErrors": 0, "publishErrors": 0, "timeouts": 0})
+        );
         assert_eq!(v["clockSynced"], true);
         // Unchanged state: next publish after 5 s.
-        assert!(h.due(now + Duration::from_millis(100), 13_820, true).is_none());
+        assert!(
+            h.due(now + Duration::from_millis(100), 13_820, true)
+                .is_none()
+        );
         let later = h.due(now + Duration::from_secs(5), 18_720, false).unwrap();
         assert_eq!(later["clockSynced"], false);
         assert_eq!(later["channels"], json!([])); // nothing fresh

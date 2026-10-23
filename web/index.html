@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="color-scheme" content="dark light" />
+    <title>CAN to MQTT · G86</title>
+    <link rel="stylesheet" href="app.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">G86 <span>CAN to MQTT</span></a
+      ><button id="theme" type="button">Light / dark</button>
+    </header>
+    <main>
+      <section id="access" class="panel">
+        <p class="eyebrow">Local access</p>
+        <h1>Connect your car’s CAN telemetry</h1>
+        <p>
+          Use the access token saved in the private file shown by the service.
+          The token stays in this browser tab.
+        </p>
+        <form id="login">
+          <label
+            >Access token<input
+              id="token"
+              type="password"
+              autocomplete="off"
+              required
+              minlength="32" /></label
+          ><button class="primary">Open setup</button>
+        </form>
+      </section>
+      <div id="product" hidden>
+        <div class="title">
+          <div>
+            <p class="eyebrow">Read-only vehicle data</p>
+            <h1>From bus to broker</h1>
+          </div>
+          <button id="logout" type="button">Sign out</button>
+        </div>
+        <nav aria-label="Setup steps">
+          <button data-step="0" aria-current="step">1 · Connect</button
+          ><button data-step="1">2 · MQTT</button
+          ><button data-step="2">3 · Live check</button>
+        </nav>
+        <form id="settings">
+          <section class="step panel" data-panel="0">
+            <p class="eyebrow">Step 1 of 3</p>
+            <h2>Choose the CAN connection</h2>
+            <p>
+              Connect a supported SocketCAN interface. Set its bitrate from the
+              vehicle specification. Discovery reads metadata and leaves your
+              network settings unchanged.
+            </p>
+            <div class="fields">
+              <label
+                >CAN interface<input
+                  id="can_interface"
+                  list="interfaces"
+                  required
+                  maxlength="15"
+                  placeholder="can0" /><datalist
+                  id="interfaces"
+                ></datalist></label
+              ><label
+                >Acquisition mode<select id="mode">
+                  <option value="obd">
+                    Standard OBD · active read-only polling
+                  </option>
+                  <option value="passive">
+                    Passive · never transmit CAN frames
+                  </option>
+                </select></label
+              ><label
+                >OBD CAN format<select id="can_format">
+                  <option value="auto">Auto · 11-bit then 29-bit</option>
+                  <option value="standard">11-bit standard</option>
+                  <option value="extended">29-bit extended</option>
+                </select></label
+              ><label
+                >Bind OBD response ID (optional, decimal)<input
+                  id="obd_response_id"
+                  inputmode="numeric"
+                  type="number"
+                  min="0"
+                  max="536870911"
+                  placeholder="Auto · one ECU"
+              /></label>
+            </div>
+            <button id="discover" type="button">Find CAN interfaces</button>
+            <p id="discovery" class="muted"></p>
+            <details>
+              <summary>Passive signals and provenance</summary>
+              <p>
+                Only use a mapping verified against your ECU specification or
+                recording. There are no guessed VW or race-car broadcast
+                profiles. The built-in obd_mode01 profile observes existing OBD
+                responses and requires a response ID.
+              </p>
+              <label
+                >Passive profile ID<input
+                  id="passive_profile"
+                  value="can"
+                  maxlength="32" /></label
+              ><label
+                >Verified signal definitions (JSON array)<textarea
+                  id="passive_signals"
+                  rows="8"
+                  spellcheck="false"
+                >
+[]</textarea>
+              </label>
+              <p class="muted">
+                Bit order: little = Intel LSB first; big = network MSB first.
+                Big is not DBC Motorola sawtooth numbering. See the installed
+                signal reference before entering a mapping.
+              </p>
+            </details>
+            <button class="primary next" type="button" data-next="1">
+              Continue to MQTT
+            </button>
+          </section>
+          <section class="step panel" data-panel="1" hidden>
+            <p class="eyebrow">Step 2 of 3</p>
+            <h2>Prepare the broker</h2>
+            <p>
+              G86 Car Computer manages a private Mosquitto broker and phone
+              pairing for you. For a standalone bridge, enter your own broker.
+              Saving here writes a draft and leaves acquisition running
+              unchanged.
+            </p>
+            <div class="fields">
+              <label
+                >Car ID<input
+                  id="car"
+                  required
+                  maxlength="32"
+                  placeholder="rally-86"
+                  pattern="[a-z0-9][a-z0-9-]{0,31}" /></label
+              ><label
+                >Broker host<input
+                  id="mqtt_host"
+                  required
+                  placeholder="127.0.0.1" /></label
+              ><label
+                >Broker port<input
+                  id="mqtt_port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  required /></label
+              ><label
+                >Username<input id="mqtt_username" autocomplete="off" /></label
+              ><label
+                >New broker password<input
+                  id="mqtt_password"
+                  type="password"
+                  autocomplete="new-password"
+                  placeholder="Leave blank to keep saved password" /></label
+              ><label
+                >TLS<select id="mqtt_tls">
+                  <option value="false">Private local broker</option>
+                  <option value="true">TLS with certificate validation</option>
+                </select></label
+              >
+            </div>
+            <p id="topics" class="notice"></p>
+            <button class="primary" type="submit">
+              Validate and save private draft
+            </button>
+            <p id="saved" role="status"></p>
+            <button class="next" type="button" data-next="2">
+              Open live check
+            </button>
+          </section>
+        </form>
+        <section class="step" data-panel="2" hidden>
+          <div id="result" class="notice" role="status">
+            Waiting for verified live data…
+          </div>
+          <div class="stats">
+            <div class="panel">
+              <small>CAN frames</small><strong id="frames">—</strong>
+            </div>
+            <div class="panel">
+              <small>Published packets</small><strong id="published">—</strong>
+            </div>
+            <div class="panel">
+              <small>Live drops</small><strong id="dropped">—</strong>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>What is actually arriving</h2>
+            <p id="link"></p>
+            <p id="pids" class="muted"></p>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Channel</th>
+                    <th>Value</th>
+                    <th>Age</th>
+                    <th>Source</th>
+                  </tr>
+                </thead>
+                <tbody id="channels"></tbody>
+              </table>
+            </div>
+            <p id="empty">
+              No fresh channels. Check ignition, wiring and the selected
+              protocol. Missing values are never replaced by zero.
+            </p>
+          </div>
+          <div class="panel">
+            <h2>Connect the phone</h2>
+            <p>
+              Open G86 Car Computer’s Phone pairing step, scan its one-use QR in
+              G86 Racing, and check that the phone receives fresh telemetry. The
+              phone needs internet and an active pit wall session to forward it
+              to your team.
+            </p>
+            <p class="muted">
+              This native bridge verifies acquisition and its broker. A broker
+              connection alone does not prove phone or pit wall delivery. ELM
+              Bluetooth, TCP and serial adapters are handled by G86 Car
+              Computer.
+            </p>
+          </div>
+        </section>
+      </div>
+      <p id="error" role="alert"></p>
+      <footer>
+        CAN to MQTT <span id="version">0.4.0</span> · GPL-3.0-only · Runs on
+        your computer
+      </footer>
+    </main>
+  </body>
+</html>

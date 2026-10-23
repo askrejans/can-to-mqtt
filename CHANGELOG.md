@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0
+
+- Add an embedded, authenticated Connect → MQTT → Live check interface with local dark/light assets and responsive layouts.
+- Save validated owner-only configuration drafts with an explicit restart; redact credentials and keep the HTTP service on loopback.
+- Discover standard Mode 01 supported PID pages, select one 11/29-bit ECU, physically address standard ECU mappings, and poll only advertised implemented measurements.
+- Add verified passive signal mappings and passive observation of a bound ECU's existing OBD responses; passive mode opens no transmit socket.
+- Emit newly acquired partial canonical packets with acquisition UTC, per-process identity, increasing sequence, exact phone-compatible sources, canonical ranges and bounded nonblocking live queues.
+- Replace zero-filled scalar snapshots with optional actual fresh scalar migration output; preserve explicit legacy topic precedence.
+- Add source-aware health/readiness and loopback metrics, real-process HTTP/browser checks, and isolated Linux virtual CAN checks.
+- Update locked dependencies, remove the unmaintained atty dependency, add validated MQTT TLS/CA and private password-file support.
+- License first-party source GPL-3.0-only, preserving third-party terms and earlier release grants.
+
+The native acquisition path is Linux classical SocketCAN. ELM BLE/serial/TCP lives in the integrated G86 Car Computer service. No physical ECU, vehicle broadcast mapping or downstream phone/pit-wall acceptance is implied by virtual CAN tests.
+
 ## 0.3.1
 
 ### Added

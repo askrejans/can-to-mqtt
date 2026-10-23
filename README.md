@@ -1,277 +1,127 @@
 # CAN to MQTT
 
-A Rust application that interfaces with a vehicle's CAN bus to retrieve On-Board Diagnostics (OBD-II) data and publish it to an MQTT broker. It is designed for real-time vehicle data monitoring and diagnostics with comprehensive logging, metrics, and health checks.
+A local, read-only telemetry bridge for Linux SocketCAN. Version 0.4 adds a guided browser interface, ECU discovery, fresh canonical MQTT packets, and explicit passive signal mappings.
 
-## Overview
+The three setup steps are **Connect → MQTT → Live check**. The live check shows the measurements that actually arrived, their age, the chosen ECU, and broker state. An open interface or saved configuration never counts as verified telemetry.
 
-The `can-to-mqtt` application connects to a vehicle's CAN bus via socketcan, sends OBD-II requests at configurable intervals, processes responses to extract vehicle parameters (engine RPM, speed, temperature, etc.), and publishes the data to an MQTT broker. The application features graceful shutdown, automatic reconnection, and can run as a systemd daemon.
+## Choose the right connection
 
-## Features
+| Connection | Support |
+| --- | --- |
+| Linux SocketCAN USB/PCI/HAT interface | This native bridge |
+| Standard 11-bit or 29-bit CAN OBD-II | Mode 01 supported-PID discovery and read-only polling |
+| A gateway exposing only standard diagnostic PIDs | Only the PIDs that gateway and selected ECU actually expose |
+| Passive vehicle broadcast CAN | Engineer-verified signal mappings, or observation of another tool's existing OBD responses |
+| Bluetooth LE, serial or TCP ELM327/AT-compatible adapter | G86 Car Computer's integrated adapter service; not a standalone feature of this binary |
+| macOS / Windows | The local configuration UI can be built and previewed; SocketCAN acquisition requires Linux |
 
-- **OBD-II Protocol**: Reads 50+ PIDs including engine, fuel, temperature, and diagnostic parameters
-- **MQTT Publishing**: Change-detection publishing with configurable QoS and retained messages
-- **Prometheus Metrics**: HTTP endpoint (`:9090/metrics`) for monitoring
-- **Health Checks**: `/health`, `/ready`, `/live` endpoints for Kubernetes-style probes
-- **Systemd Integration**: Runs as a daemon with watchdog support
+Standard OBD cannot produce manufacturer-specific race data that the vehicle does not expose. Wheel speeds, brake pressure, steering, gears or proprietary channels need a verified broadcast mapping or a supported ECU bridge. There are no guessed VW or universal race-car profiles.
 
-## Project Structure
+## Run on Linux
 
-```
-can-to-mqtt
-├── src
-│   ├── main.rs           # Application entry point and main loop
-│   ├── lib.rs            # Library root, exporting modules
-│   ├── cli.rs            # CLI argument parsing with clap
-│   ├── config.rs         # Configuration loading and validation
-│   ├── error.rs          # Comprehensive error types
-│   ├── metrics.rs        # Prometheus metrics and HTTP server
-│   ├── mqtt_handler.rs   # MQTT connection and publishing
-│   ├── constants.rs      # OBD-II constants
-│   ├── vehicle           # Module for vehicle data management
-│   │   ├── mod.rs        # Vehicle module definitions
-│   │   └── data.rs       # VehicleData struct (85 fields)
-│   ├── obd               # Module for OBD-II communication
-│   │   ├── mod.rs        # OBD module definitions
-│   │   ├── request.rs    # OBD request functions
-│   │   └── response.rs   # OBD response parsing (79 PIDs)
-│   └── display           # Module for terminal display
-│       ├── mod.rs        # Display module definitions
-│       └── table.rs      # Table formatting
-├── contrib
-│   ├── can-to-mqtt.service  # Systemd unit file
-│   └── can-to-mqtt.env      # Environment file template
-├── Cargo.toml            # Project dependencies and configuration
-└── README.md             # This file
+Download the release archive for Linux ARM64 (64-bit Raspberry Pi / ARM computers) or Linux x86-64. The binaries target glibc 2.28 or newer; use a matching modern distribution with the libudev runtime library installed (`libudev1` on Debian/Ubuntu). Extract it and keep the included license and notices with it.
+
+```sh
+./can-to-mqtt version
+cp example.settings.toml settings.toml
+# Edit settings.toml: select your CAN interface, car ID and broker.
+./can-to-mqtt --config settings.toml validate-config
+./can-to-mqtt --config settings.toml
 ```
 
-## Setup Instructions
+Open **http://127.0.0.1:9093/** on that computer. On first start the service creates a random access token and logs the **file path**, never its value. Read that private file to sign in. The default is `$XDG_STATE_HOME/g86-can-to-mqtt/http-9093.token`, or `$HOME/.config/g86-can-to-mqtt/http-9093.token` when XDG state is unset. The browser keeps the token only in that tab's session storage. Sign out to clear it.
 
-### Prerequisites
+For a headless Pi, forward the local UI through SSH, then open the same URL on your laptop:
 
-- **Rust toolchain** (1.70+): Install from [rustup.rs](https://rustup.rs/)
-- **Linux system** with CAN bus support (socketcan)
-- **CAN interface** configured (e.g., `can0`)
-- **MQTT broker** running (e.g., Mosquitto)
-
-### Build and Install
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/askrejans/can-to-mqtt.git
-   cd can-to-mqtt
-   ```
-
-2. Build the project:
-   ```bash
-   cargo build --release
-   ```
-
-3. Install system-wide (optional):
-   ```bash
-   sudo cp target/release/can-to-mqtt /usr/local/bin/
-   sudo cp contrib/can-to-mqtt.service /etc/systemd/system/
-   sudo mkdir -p /etc/g86-car-telemetry
-   sudo cp src/example.settings.toml /etc/g86-car-telemetry/can-to-mqtt.toml
-   sudo systemctl daemon-reload
-   ```
-
-## Configuration
-
-Create a configuration file at `/etc/g86-car-telemetry/can-to-mqtt.toml` or `./settings.toml`:
-
-```toml
-can_interface = "can0"
-mqtt_host = "localhost"
-mqtt_port = 1883
-car = "golf86"            # G86 namespace: /g86/golf86/obd
-
-# Optional settings (see src/example.settings.toml for all options)
-mqtt_username = "user"
-mqtt_password = "pass"
-log_level = "info"
-poll_interval_high_freq_ms = 20
-poll_interval_regular_ms = 200
-prometheus_enabled = true
-prometheus_port = 9090
+```sh
+ssh -L 9093:127.0.0.1:9093 your-user@your-pi
 ```
 
-### Topic namespace
+The setup HTTP service binds only to loopback. It does not expose a plaintext bearer token to the car Wi-Fi. G86 Car Computer provides the integrated HTTPS setup, broker management, downloadable suite, and secure phone QR pairing.
 
-| Configured | Base topic | Notes |
-|---|---|---|
-| `mqtt_base_topic = "/X/Y/"` (or `CAN2MQTT_MQTT_BASE_TOPIC`) | `/X/Y/` | explicit value always wins |
-| `car = "golf86"` (or `CAN2MQTT_CAR`) | `/g86/golf86/obd` | G86 car computer layout (g86-logger sets this) |
-| neither | `/GOLF86/ECU/` | legacy default, unchanged so existing installs keep their topics |
+### 1. Connect
 
-`car` is a slug: 1–32 lower-case letters, digits or hyphens, not starting with a hyphen.
+Select an interface found by **Find CAN interfaces**. Discovery only reads Linux interface metadata. Bring the interface up with your system's network tools, using the bitrate and wiring specified for your vehicle and adapter. For example, after checking that 500 kbit/s is correct:
 
-Environment variables override settings using the `CAN2MQTT_` prefix
-(`CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`,
-`MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`):
-```bash
-export CAN2MQTT_MQTT_HOST=mqtt.example.com
-export CAN2MQTT_LOG_LEVEL=debug
+```sh
+sudo ip link set can0 up type can bitrate 500000
+ip -details link show can0
 ```
 
-## Usage
+Use **Standard OBD** for a diagnostic connection. Auto discovery tries 11-bit then 29-bit CAN, reads supported-PID pages, binds one ECU, then polls only implemented PIDs advertised by that ECU. Standard ECU addresses receive physically addressed requests after binding. An optional response ID filters a known gateway; a custom nonstandard gateway ID keeps functional request addressing because no physical destination can be inferred safely.
 
-### Running the Application
+Use **Passive** for a connection that must not transmit. Passive mode never opens a transmit socket. It requires explicit verified mappings before it can produce channels. See [passive signals](docs/PASSIVE_SIGNALS.md).
 
-```bash
-# Run in foreground with terminal display
-can-to-mqtt run --foreground
+### 2. MQTT
 
-# Run as daemon
-can-to-mqtt daemon
+For an integrated installation, let G86 Car Computer configure the private broker. For a standalone installation, supply the broker host, port and credentials. Use TLS with certificate validation for a remote broker; `mqtt_ca_file` can point to a private CA. A private password file avoids putting broker credentials in a command line.
 
-# With custom config
-can-to-mqtt --config /path/to/config.toml run
+**Validate and save private draft** validates and atomically saves an owner-only JSON file. It does not change running acquisition. Stop the bridge, then run the restart command displayed by the UI. For a systemd installation, copy or promote the reviewed draft to the service's configured file and restart that service. Keep the saved file private: it may contain credentials needed for restart.
 
-# Validate configuration
-can-to-mqtt validate-config
+### 3. Live check, phone and pit wall
 
-# Test CAN and MQTT connections
-can-to-mqtt test-connection
-```
+The green check requires fresh source measurements and an actual MQTT connection on this computer. Missing, unsupported, malformed, future-dated, out-of-range or stale measurements are omitted; zero is kept when zero was measured. The UI removes channels after two seconds without a new measurement.
 
-### Systemd Service
+For phone delivery, open G86 Car Computer's **Phone pairing** step and scan its one-use QR in G86 Racing, or paste the pairing code. Check the phone's fresh telemetry indicators. An internet connection and an active pit wall session on the phone are required to forward telemetry to the team. This standalone bridge cannot prove those downstream links.
 
-```bash
-# Start the service
-sudo systemctl start can-to-mqtt
+## Data contract
 
-# Enable at boot
-sudo systemctl enable can-to-mqtt
-
-# Check status
-sudo systemctl status can-to-mqtt
-
-# View logs
-sudo journalctl -u can-to-mqtt -f
-```
-
-## How It Works
-
-Once running, the application:
-
-1. Opens the CAN bus interface and connects to the MQTT broker
-2. Sends OBD-II requests for configured PIDs at two frequencies:
-   - **High-frequency** (20ms): RPM, speed, engine load, timing advance, throttle position
-   - **Regular frequency** (200ms): 50+ other parameters (temperatures, pressures, fuel data, etc.)
-3. Receives and parses OBD-II responses from the CAN bus
-4. Publishes changed values to MQTT topics (e.g., `/GOLF86/ECU/RPM`, `/GOLF86/ECU/VSS`)
-5. Updates terminal display (if enabled) and records metrics
-6. Handles reconnections automatically if MQTT or CAN connections drop
-
-### MQTT Topics
-
-| Topic | Retained | Payload |
-|---|---|---|
-| `<base>/telemetry` | no | G86 envelope schema 1, `source: "obd2/mode01"`, `partial: true`, one channel per received PID with its capture time |
-| `<base>/status` | yes (LWT) | `online` / `offline` |
-| `<base>/health` | yes | bridge health JSON, every 5 s and on state change (below) |
-| `<base>/<PARAMETER>` | yes | legacy scalar topics (below) |
-
-Health (G86 car computer contract):
+With `car = "rally-86"`, active OBD packets use `/g86/rally-86/obd/telemetry`. Passive packets use `/g86/rally-86/sensors/<passive_profile>/telemetry`. The profile is one topic segment, matching the phone's sensor subscription.
 
 ```json
-{"schema": 1, "bridge": "can-to-mqtt", "version": "0.3.1", "bootId": "…",
- "timestampMs": 1792664130000, "state": "ok", "link": "connected",
- "sources": ["obd2/mode01"], "rateHz": 41.2, "ageMs": 18,
- "channels": ["ecuSpeedKmh", "engineLoad", "ignitionDeg", "rpm", "throttle"],
- "errors": {"canErrors": 0, "publishErrors": 0, "timeouts": 12}, "clockSynced": true}
+{
+  "schema": 1,
+  "source": "obd2/mode01",
+  "partial": true,
+  "bootId": "random-per-process-identity",
+  "sequence": 42,
+  "timestampMs": 1790000000123,
+  "channels": { "rpm": 2000.0 }
+}
 ```
 
-- `link`: `disconnected` (CAN socket closed), `connecting` (no OBD reply in 10 s), `connected`.
-- `state`: `down` unless connected; `degraded` when the last telemetry packet is
-  older than 2 s or a CAN/publish error happened in the last 5 s; else `ok`.
-  `timeouts` are counted but do not degrade: a car that lacks a polled PID
-  times out on every regular cycle.
-- `rateHz`: telemetry messages per second over the last 5 s; `ageMs`: age of the
-  last published capture; `channels`: keys published in the last 2 s;
-  `clockSynced`: kernel clock disciplined (adjtimex, no `STA_UNSYNC`).
+Each packet contains only values acquired from that response or frame. `timestampMs` is acquisition UTC milliseconds; keep the computer's clock synchronized. The bridge does not repeat cached values with a new time. The sequence increases across interface reconnects within the same boot identity. Canonical live packets use QoS 0 and are not retained. A bounded 64-packet queue drops old or overflowing live packets rather than blocking CAN acquisition; queued packets older than 1.5 seconds are discarded. This is a live stream, not a durable recording journal.
 
-Legacy scalar topics follow the pattern `{mqtt_base_topic}/{PARAMETER}`:
-- `/GOLF86/ECU/RPM` - Engine RPM
-- `/GOLF86/ECU/VSS` - Vehicle speed
-- `/GOLF86/ECU/CLT` - Coolant temperature
-- `/GOLF86/ECU/TPS` - Throttle position
-- And 50+ more parameters...
+Implemented Mode 01 channels (polled only when advertised by the selected ECU):
 
-Messages are published with retained flag and only when values change.
+| PID | Canonical channel | Unit |
+| --- | --- | --- |
+| 04 / 05 | engineLoad / coolantC | % / °C |
+| 0A / 0B | fuelPressureKpa / manifoldKpa | kPa |
+| 0C / 0D | rpm / ecuSpeedKmh | rpm / km/h |
+| 0E / 0F | ignitionDeg / intakeC | degrees / °C |
+| 10 / 11 | massAirFlowGps / throttle | g/s / % |
+| 24 / 2F | lambda / fuelLevel | ratio / % |
+| 33 / 42 | baroKpa / batteryV | kPa / V |
+| 46 / 5C | ambientC / oilC | °C |
 
-## Monitoring
+`<base>/health` is retained and contains actual source/broker freshness and clock state. `<base>/status` is retained `online`/`offline` availability with a last will; availability alone is not proof of fresh measurements. Health is updated every five seconds.
 
-The application exposes Prometheus metrics on port 9090 (configurable):
+For migration, an explicitly configured `mqtt_base_topic` wins over `car`. With neither, the legacy `/GOLF86/ECU/` prefix is preserved. `legacy_scalar_output = true` publishes only the corresponding actually received legacy fields; the old zero-filled 85-field snapshot is no longer emitted. Set it to false for canonical-only installations. Old public library modules remain for source compatibility but are not used by the new acquisition path.
 
-```bash
-# View metrics
-curl http://localhost:9090/metrics
+## Configuration and local API
 
-# Check health
-curl http://localhost:9090/health
+See [example.settings.toml](src/example.settings.toml) for all supported service options. Files can be TOML or JSON. `--config` selects a file; otherwise local `settings.toml` and the standard `/etc/g86-car-telemetry/can-to-mqtt.toml` paths are checked. Explicit `CAN2MQTT_*` environment overrides include `CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`, and `HTTP_PORT`.
 
-# Readiness probe (for Kubernetes)
-curl http://localhost:9090/ready
+The local token-protected API provides `GET /api/v1/config` (redacted), `GET /api/v1/status`, `GET /api/v1/discovery`, `GET /api/v1/channels` and `POST /api/v1/config` (draft only). Mutations require `X-G86-Action: configure`; browser origins must match the loopback host. Bodies are bounded to 64 KiB. Static UI assets are embedded, with no CDN, inline script, analytics, or external network dependency.
+
+Optional Prometheus endpoints bind to `127.0.0.1:9090`: `/metrics`, `/health`, `/ready`, `/live`. `/ready` requires fresh actual telemetry, CAN and MQTT. Port 9093 `/healthz` exposes only the readiness boolean without a token. API details require the local token.
+
+`test-connection` opens a receive socket and connects to MQTT without sending diagnostic requests. It verifies those connections only, not ECU data. `--web-only` previews setup without opening a CAN socket. Run under systemd using the hardened [example unit](contrib/can-to-mqtt.service); create a dedicated service user and provision the CAN interface separately.
+
+## Build and verify locally
+
+Rust 1.89 or newer, a C/C++ build toolchain, CMake and pkg-config are required. Linux also needs development headers for libudev (`libudev-dev` on Debian/Ubuntu). MQTT TLS dependencies are built from the locked vendored OpenSSL crate.
+
+```sh
+cargo build --release --locked
+cargo test --all-targets --locked
+cargo clippy --all-targets --locked -- -D warnings
+cargo audit
 ```
 
-Key metrics include CAN frame counts, MQTT publish rates, OBD request/response times, and connection status.
-
-## Troubleshooting
-
-### CAN Interface Issues
-```bash
-# Check interface status
-ip link show can0
-
-# Bring up CAN interface with 500kbit/s
-sudo ip link set can0 up type can bitrate 500000
-
-# Monitor raw CAN traffic
-candump can0
-```
-
-### MQTT Issues
-```bash
-# Test broker connectivity
-mosquitto_sub -h localhost -p 1883 -t "/GOLF86/ECU/#" -v
-
-# Check connection in logs
-sudo journalctl -u can-to-mqtt | grep -i mqtt
-```
-
-### Check Application Status
-```bash
-# View metrics
-curl http://localhost:9090/metrics | grep -E "can_|mqtt_|obd_"
-
-# Check health
-curl http://localhost:9090/health | jq
-```
-
-## Dependencies
-
-This project uses the following main dependencies:
-
-- `socketcan` - CAN bus communication (Linux only)
-- `tokio` - Async runtime
-- `paho-mqtt` - MQTT client
-- `clap` - CLI argument parsing
-- `tracing` - Structured logging
-- `metrics` - Prometheus metrics
-- `hyper` - HTTP server for metrics
-- See `Cargo.toml` for complete list
+See [testing](docs/TESTING.md) for real-process browser checks and isolated Linux virtual CAN tests, and [release instructions](docs/RELEASING.md) for local builds and artifacts. Builds run locally; this repository contains no hosted GitHub build workflows.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions welcome! Please open an issue or submit a pull request.
-
-## Acknowledgments
-
-- Built with [socketcan-rs](https://github.com/socketcan-rs/socketcan-rs)
-- MQTT via [paho.mqtt.rust](https://github.com/eclipse/paho.mqtt.rust)
-- OBD-II protocol based on SAE J1979 standard
+First-party source is **GPL-3.0-only** from 0.4.0. See [LICENSE](LICENSE), [licensing notes](LICENSING.md) and [third-party notices](THIRD_PARTY_NOTICES.md). Earlier releases retain the licenses under which they were released.
