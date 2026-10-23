@@ -4,13 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta name="color-scheme" content="dark light" />
-    <title>CAN to MQTT · G86</title>
+    <title>CAN to MQTT</title>
     <link rel="stylesheet" href="app.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
     <header>
-      <a class="brand" href="./">G86 <span>CAN to MQTT</span></a
+      <a class="brand" href="./"><span>CAN to MQTT</span></a
       ><button id="theme" type="button">Light / dark</button>
     </header>
     <main>
@@ -126,19 +126,19 @@
             <p class="eyebrow">Step 2 of 3</p>
             <h2>Prepare the broker</h2>
             <p>
-              G86 Car Computer manages a private Mosquitto broker and phone
-              pairing for you. For a standalone bridge, enter your own broker.
+              Enter the MQTT broker used by your telemetry consumers.
               Saving here writes a draft and leaves acquisition running
               unchanged.
             </p>
             <div class="fields">
               <label
-                >Car ID<input
+                >Car scope (optional)<input
                   id="car"
-                  required
                   maxlength="32"
                   placeholder="rally-86"
                   pattern="[a-z0-9][a-z0-9-]{0,31}" /></label
+              ><label
+                >MQTT topic prefix<input id="mqtt_base_topic" placeholder="/telemetry/car-1/engine" /></label
               ><label
                 >Broker host<input
                   id="mqtt_host"
@@ -214,25 +214,22 @@
             </p>
           </div>
           <div class="panel">
-            <h2>Connect the phone</h2>
+            <h2>Connect a telemetry consumer</h2>
             <p>
-              Open G86 Car Computer’s Phone pairing step, scan its one-use QR in
-              G86 Racing, and check that the phone receives fresh telemetry. The
-              phone needs internet and an active pit wall session to forward it
-              to your team.
+              Subscribe your dashboard, logger or phone to the configured MQTT
+              topic prefix and check that fresh measured channels arrive.
             </p>
             <p class="muted">
-              This native bridge verifies acquisition and its broker. A broker
-              connection alone does not prove phone or pit wall delivery. ELM
-              Bluetooth, TCP and serial adapters are handled by G86 Car
-              Computer.
+              This bridge verifies local acquisition and broker publishing.
+              Check downstream consumers separately. Native CAN acquisition
+              uses Linux SocketCAN; ELM transports need a separate adapter service.
             </p>
           </div>
         </section>
       </div>
       <p id="error" role="alert"></p>
       <footer>
-        CAN to MQTT <span id="version">0.4.0</span> · GPL-3.0-only · Runs on
+        CAN to MQTT <span id="version">0.4.1</span> · GPL-3.0-only · Runs on
         your computer
       </footer>
     </main>

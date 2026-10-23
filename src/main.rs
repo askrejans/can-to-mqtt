@@ -54,7 +54,7 @@ fn test_connection(config: &AppConfig) -> Result<(), AppError> {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = config;
-        Err(AppError::Initialization("Native SocketCAN acquisition requires Linux; use G86 Car Computer for ELM adapters on this platform".into()))
+        Err(AppError::Initialization("Native SocketCAN acquisition requires Linux; use a separate ELM adapter service on this platform".into()))
     }
     #[cfg(target_os = "linux")]
     {

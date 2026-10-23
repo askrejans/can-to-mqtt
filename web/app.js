@@ -53,15 +53,16 @@ document
     button.addEventListener("click", () => step(Number(button.dataset.next))),
   );
 function topics() {
-  const car = $("car").value || "<car>",
-    prefix =
-      $("mode").value === "passive"
+  const car = $("car").value,
+    prefix = $("mqtt_base_topic").value.trim() || (car
+      ? $("mode").value === "passive"
         ? `/g86/${car}/sensors/${$("passive_profile").value || "can"}`
-        : `/g86/${car}/obd`;
+        : `/g86/${car}/obd`
+      : "/GOLF86/ECU");
   $("topics").textContent =
     `Canonical topic: ${prefix}/telemetry. Only actual fresh fields are sent.`;
 }
-for (const field of ["car", "mode", "passive_profile"])
+for (const field of ["car", "mqtt_base_topic", "mode", "passive_profile"])
   $(field).addEventListener("input", topics);
 async function discover() {
   const data = await api("discovery");
@@ -87,7 +88,7 @@ function draw(state) {
   $("dropped").textContent = String(state.dropped);
   const ready = state.ready === true;
   $("result").textContent = ready
-    ? "Live CAN data and broker publishing verified on this computer. Pair the phone to verify the next link."
+    ? "Live CAN data and broker publishing verified on this computer. Check your MQTT consumer to verify the next link."
     : state.error ||
       "Waiting for fresh source data and the broker. Saved settings alone do not prove telemetry is arriving.";
   $("result").classList.toggle("good", ready);
@@ -134,8 +135,10 @@ async function open() {
     "mqtt_host",
     "mqtt_port",
     "mqtt_username",
+    "mqtt_base_topic",
   ])
     $(field).value = current[field] ?? "";
+  if (!current.mqtt_base_topic_explicit) $("mqtt_base_topic").value = "";
   $("obd_response_id").value = current.obd_response_id ?? "";
   $("mqtt_tls").value = String(current.mqtt_tls);
   $("passive_signals").value = JSON.stringify(
@@ -181,8 +184,10 @@ $("settings").addEventListener("submit", async (event) => {
       "car",
       "mqtt_host",
       "mqtt_username",
+      "mqtt_base_topic",
     ])
       body[field] = $(field).value.trim();
+    body.car = body.car || null;
     body.obd_response_id =
       $("obd_response_id").value === ""
         ? null
@@ -195,7 +200,7 @@ $("settings").addEventListener("submit", async (event) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-G86-Action": "configure",
+        "X-Bridge-Action": "configure",
       },
       body: JSON.stringify(body),
     });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1
+
+- Document standalone use with arbitrary MQTT brokers and explicit topic prefixes; keep existing topic and telemetry contracts unchanged.
+- Add an explicit MQTT topic prefix to guided setup; vehicle scope is optional. Accept `X-Bridge-Action` for configuration while preserving `X-G86-Action`.
+
 ## 0.4.0
 
 - Add an embedded, authenticated Connect → MQTT → Live check interface with local dark/light assets and responsive layouts.

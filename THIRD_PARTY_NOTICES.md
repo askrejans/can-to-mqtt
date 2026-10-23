@@ -1,6 +1,6 @@
 # Third-party notices
 
-First-party can-to-mqtt 0.4.0 is GPL-3.0-only. Third-party components retain the terms below; this table is generated from the exact Cargo.lock resolution, including build and platform-specific dependencies that may not be linked into every binary. Multiple-license choices remain available as specified upstream.
+First-party can-to-mqtt 0.4.1 is GPL-3.0-only. Third-party components retain the terms below; this table is generated from the exact Cargo.lock resolution, including build and platform-specific dependencies that may not be linked into every binary. Multiple-license choices remain available as specified upstream.
 
 Release archives include collected original license/copyright/notice texts in `licenses/third-party/`. Run `node scripts/collect-licenses.cjs <output-directory>` from the source checkout to regenerate them after `cargo fetch --locked`. The four overrides in `licenses/overrides/` record pinned upstream texts omitted from their crate packages. Bundled Paho C and OpenSSL notices are included separately inside their sys/source crate directories.
 

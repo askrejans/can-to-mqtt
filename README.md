@@ -4,6 +4,12 @@ A local, read-only telemetry bridge for Linux SocketCAN. Version 0.4 adds a guid
 
 The three setup steps are **Connect → MQTT → Live check**. The live check shows the measurements that actually arrived, their age, the chosen ECU, and broker state. An open interface or saved configuration never counts as verified telemetry.
 
+## Standalone MQTT use
+
+This bridge can publish to any MQTT broker. Configure the broker host, credentials and `mqtt_base_topic` for your own installation; use TLS for a broker reached across an untrusted network. The source distribution and ordinary binaries have no account, subscription or activation dependency. Product-specific subscription checks belong to separately built managed distributions.
+
+For a custom namespace, set `mqtt_base_topic` explicitly (for example `/telemetry/car-1/engine`). An explicit prefix takes precedence over `car`. The optional legacy `car` shortcut keeps its existing `/g86/<car>/…` namespace for compatibility; omitting it does not create an account or select a vehicle profile. Existing defaults and packet fields remain compatible.
+
 ## Choose the right connection
 
 | Connection | Support |
@@ -12,7 +18,7 @@ The three setup steps are **Connect → MQTT → Live check**. The live check sh
 | Standard 11-bit or 29-bit CAN OBD-II | Mode 01 supported-PID discovery and read-only polling |
 | A gateway exposing only standard diagnostic PIDs | Only the PIDs that gateway and selected ECU actually expose |
 | Passive vehicle broadcast CAN | Engineer-verified signal mappings, or observation of another tool's existing OBD responses |
-| Bluetooth LE, serial or TCP ELM327/AT-compatible adapter | G86 Car Computer's integrated adapter service; not a standalone feature of this binary |
+| Bluetooth LE, serial or TCP ELM327/AT-compatible adapter | separate ELM adapter service; not a feature of this SocketCAN binary |
 | macOS / Windows | The local configuration UI can be built and previewed; SocketCAN acquisition requires Linux |
 
 Standard OBD cannot produce manufacturer-specific race data that the vehicle does not expose. Wheel speeds, brake pressure, steering, gears or proprietary channels need a verified broadcast mapping or a supported ECU bridge. There are no guessed VW or universal race-car profiles.
@@ -24,7 +30,7 @@ Download the release archive for Linux ARM64 (64-bit Raspberry Pi / ARM computer
 ```sh
 ./can-to-mqtt version
 cp example.settings.toml settings.toml
-# Edit settings.toml: select your CAN interface, car ID and broker.
+# Edit settings.toml: select your CAN interface, topic prefix and broker.
 ./can-to-mqtt --config settings.toml validate-config
 ./can-to-mqtt --config settings.toml
 ```
@@ -37,7 +43,7 @@ For a headless Pi, forward the local UI through SSH, then open the same URL on y
 ssh -L 9093:127.0.0.1:9093 your-user@your-pi
 ```
 
-The setup HTTP service binds only to loopback. It does not expose a plaintext bearer token to the car Wi-Fi. G86 Car Computer provides the integrated HTTPS setup, broker management, downloadable suite, and secure phone QR pairing.
+The setup HTTP service binds only to loopback. For LAN access, place it behind an authenticated HTTPS reverse proxy.
 
 ### 1. Connect
 
@@ -54,7 +60,7 @@ Use **Passive** for a connection that must not transmit. Passive mode never open
 
 ### 2. MQTT
 
-For an integrated installation, let G86 Car Computer configure the private broker. For a standalone installation, supply the broker host, port and credentials. Use TLS with certificate validation for a remote broker; `mqtt_ca_file` can point to a private CA. A private password file avoids putting broker credentials in a command line.
+Supply the broker host, port and credentials. Use TLS with certificate validation for a remote broker; `mqtt_ca_file` can point to a private CA. A private password file avoids putting broker credentials in a command line.
 
 **Validate and save private draft** validates and atomically saves an owner-only JSON file. It does not change running acquisition. Stop the bridge, then run the restart command displayed by the UI. For a systemd installation, copy or promote the reviewed draft to the service's configured file and restart that service. Keep the saved file private: it may contain credentials needed for restart.
 
@@ -62,7 +68,7 @@ For an integrated installation, let G86 Car Computer configure the private broke
 
 The green check requires fresh source measurements and an actual MQTT connection on this computer. Missing, unsupported, malformed, future-dated, out-of-range or stale measurements are omitted; zero is kept when zero was measured. The UI removes channels after two seconds without a new measurement.
 
-For phone delivery, open G86 Car Computer's **Phone pairing** step and scan its one-use QR in G86 Racing, or paste the pairing code. Check the phone's fresh telemetry indicators. An internet connection and an active pit wall session on the phone are required to forward telemetry to the team. This standalone bridge cannot prove those downstream links.
+Subscribe your dashboard, data logger or phone client to `<base>/telemetry` and check fresh measured channels. This bridge verifies local acquisition and broker publishing; verify downstream consumers separately.
 
 ## Data contract
 
@@ -103,7 +109,7 @@ For migration, an explicitly configured `mqtt_base_topic` wins over `car`. With 
 
 See [example.settings.toml](src/example.settings.toml) for all supported service options. Files can be TOML or JSON. `--config` selects a file; otherwise local `settings.toml` and the standard `/etc/g86-car-telemetry/can-to-mqtt.toml` paths are checked. Explicit `CAN2MQTT_*` environment overrides include `CAN_INTERFACE`, `MQTT_HOST`, `MQTT_PORT`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_BASE_TOPIC`, `CAR`, `LOG_LEVEL`, and `HTTP_PORT`.
 
-The local token-protected API provides `GET /api/v1/config` (redacted), `GET /api/v1/status`, `GET /api/v1/discovery`, `GET /api/v1/channels` and `POST /api/v1/config` (draft only). Mutations require `X-G86-Action: configure`; browser origins must match the loopback host. Bodies are bounded to 64 KiB. Static UI assets are embedded, with no CDN, inline script, analytics, or external network dependency.
+The local token-protected API provides `GET /api/v1/config` (redacted), `GET /api/v1/status`, `GET /api/v1/discovery`, `GET /api/v1/channels` and `POST /api/v1/config` (draft only). Mutations require `X-Bridge-Action: configure` (`X-G86-Action` remains accepted for existing clients); browser origins must match the loopback host. Bodies are bounded to 64 KiB. Static UI assets are embedded, with no CDN, inline script, analytics, or external network dependency.
 
 Optional Prometheus endpoints bind to `127.0.0.1:9090`: `/metrics`, `/health`, `/ready`, `/live`. `/ready` requires fresh actual telemetry, CAN and MQTT. Port 9093 `/healthz` exposes only the readiness boolean without a token. API details require the local token.
 

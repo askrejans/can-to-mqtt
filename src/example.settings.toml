@@ -8,8 +8,8 @@ enabled_pids = []
 poll_interval_high_freq_ms = 20    # One request per tick; fast PID group round-robin
 poll_interval_regular_ms = 200
 
-car = "rally-86"                  # /g86/rally-86/obd (passive: /sensors/<profile>)
-# mqtt_base_topic = "/custom/can"  # Explicit override wins; omit to use car scope
+mqtt_base_topic = "/telemetry/car-1/engine" # Choose any broker namespace
+# car = "rally-86"                # Legacy optional /g86/<car>/… shortcut
 mqtt_host = "127.0.0.1"
 mqtt_port = 1883
 # mqtt_username = "can-rally-86"

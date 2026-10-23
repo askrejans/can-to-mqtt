@@ -107,6 +107,10 @@ impl AppConfig {
     pub fn redacted(&self) -> Value {
         let mut value = serde_json::to_value(self).unwrap_or_else(|_| json!({}));
         if let Some(obj) = value.as_object_mut() {
+            obj.insert(
+                "mqtt_base_topic_explicit".into(),
+                json!(self.mqtt_base_topic_explicit),
+            );
             for key in ["mqtt_password", "http_token"] {
                 obj.insert(
                     key.into(),
@@ -228,7 +232,7 @@ impl AppConfig {
         {
             return Err(bad(
                 "http_bind",
-                "The native HTTP UI binds to loopback only. Use the G86 Car Computer HTTPS service for LAN access",
+                "The native HTTP UI binds to loopback only. Use an authenticated HTTPS reverse proxy for LAN access",
             ));
         }
         if self

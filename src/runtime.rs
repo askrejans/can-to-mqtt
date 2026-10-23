@@ -165,7 +165,7 @@ async fn shutdown() {
 }
 #[cfg(not(target_os = "linux"))]
 async fn acquire(_: AppConfig, shared: Arc<Shared>, _: mpsc::Sender<Outgoing>) {
-    shared.can(false,"SocketCAN requires Linux. Use G86 Car Computer for a Bluetooth, serial or TCP ELM adapter on this platform");
+    shared.can(false,"SocketCAN requires Linux. Use a separate ELM adapter service for Bluetooth, serial or TCP transports on this platform");
 }
 #[cfg(target_os = "linux")]
 async fn acquire(config: AppConfig, shared: Arc<Shared>, tx: mpsc::Sender<Outgoing>) {

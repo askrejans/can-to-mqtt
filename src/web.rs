@@ -64,7 +64,10 @@ fn safe_host(headers: &hyper::HeaderMap) -> bool {
         })
 }
 fn mutation_allowed(headers: &hyper::HeaderMap) -> bool {
-    if headers.get("x-g86-action").and_then(|v| v.to_str().ok()) != Some("configure") {
+    if !["x-bridge-action", "x-g86-action"]
+        .iter()
+        .any(|name| headers.get(*name).and_then(|v| v.to_str().ok()) == Some("configure"))
+    {
         return false;
     }
     let origin = headers.get("origin").and_then(|v| v.to_str().ok());
@@ -345,6 +348,9 @@ mod tests {
         assert!(auth(&h, &token));
         assert!(!auth(&h, &"b".repeat(64)));
         assert!(!mutation_allowed(&h));
+        h.insert("x-bridge-action", "configure".parse().unwrap());
+        assert!(mutation_allowed(&h));
+        h.remove("x-bridge-action");
         h.insert("x-g86-action", "configure".parse().unwrap());
         assert!(mutation_allowed(&h));
         h.insert("origin", "https://untrusted.invalid".parse().unwrap());
@@ -371,6 +377,20 @@ mod tests {
         assert_eq!(changed.base(), "/g86/car86/sensors/can");
         assert!(configure(&current, json!({"mqtt_port":-1})).is_err());
         assert!(configure(&current, json!({"can_interface":"can0; command"})).is_err());
+    }
+    #[test]
+    fn generic_topic_prefix_is_independent_of_optional_car_scope() {
+        let current = AppConfig::default();
+        let custom = configure(
+            &current,
+            json!({"mqtt_base_topic":"/telemetry/rover/engine", "car":null}),
+        )
+        .unwrap();
+        assert_eq!(custom.base(), "/telemetry/rover/engine");
+        assert_eq!(custom.redacted()["mqtt_base_topic_explicit"], true);
+        let legacy = configure(&custom, json!({"mqtt_base_topic":"", "car":"legacy-car"})).unwrap();
+        assert_eq!(legacy.base(), "/g86/legacy-car/obd");
+        assert_eq!(legacy.redacted()["mqtt_base_topic_explicit"], false);
     }
     #[test]
     fn assets_have_no_inline_script_external_resources_or_html_injection() {
